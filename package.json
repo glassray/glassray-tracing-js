@@ -1,0 +1,65 @@
+{
+  "name": "@glassray/tracing",
+  "version": "0.1.0",
+  "description": "Zero-dependency tracing SDK that sends your agent runs to Glassray",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      }
+    },
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glassray/glassray-tracing-js.git"
+  },
+  "homepage": "https://glassray.ai/docs",
+  "keywords": [
+    "glassray",
+    "tracing",
+    "observability",
+    "llm",
+    "agents",
+    "opentelemetry",
+    "otlp"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "release": "release-it",
+    "release:dry": "release-it --dry-run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^24.12.4",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0",
+    "release-it": "^20.2.1",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,209 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest contract expects 1`] = `
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "support-agent",
+            },
+          },
+          {
+            "key": "glassray.agent",
+            "value": {
+              "stringValue": "support-agent",
+            },
+          },
+          {
+            "key": "glassray.environment",
+            "value": {
+              "stringValue": "prod",
+            },
+          },
+          {
+            "key": "glassray.customer",
+            "value": {
+              "stringValue": "default-co",
+            },
+          },
+          {
+            "key": "session.id",
+            "value": {
+              "stringValue": "sess-9",
+            },
+          },
+        ],
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "@glassray/tracing",
+            "version": "0.1.0",
+          },
+          "spans": [
+            {
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent",
+                  },
+                },
+                {
+                  "key": "gen_ai.agent.name",
+                  "value": {
+                    "stringValue": "support-agent",
+                  },
+                },
+                {
+                  "key": "glassray.customer",
+                  "value": {
+                    "stringValue": "acme",
+                  },
+                },
+                {
+                  "key": "glassray.flow",
+                  "value": {
+                    "stringValue": "refunds",
+                  },
+                },
+                {
+                  "key": "glassray.environment",
+                  "value": {
+                    "stringValue": "staging",
+                  },
+                },
+                {
+                  "key": "input.value",
+                  "value": {
+                    "stringValue": "{"ticketId":"T-1"}",
+                  },
+                },
+                {
+                  "key": "output.value",
+                  "value": {
+                    "stringValue": "resolved",
+                  },
+                },
+              ],
+              "endTimeUnixNano": "1751400001500000000",
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "handle-ticket",
+              "spanId": "aaaaaaaaaaaaaaaa",
+              "startTimeUnixNano": "1751400000000000000",
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+            },
+            {
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "chat",
+                  },
+                },
+                {
+                  "key": "gen_ai.provider.name",
+                  "value": {
+                    "stringValue": "anthropic",
+                  },
+                },
+                {
+                  "key": "gen_ai.system",
+                  "value": {
+                    "stringValue": "anthropic",
+                  },
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "claude-opus-4-8",
+                  },
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "42",
+                  },
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "17",
+                  },
+                },
+                {
+                  "key": "gen_ai.input.messages",
+                  "value": {
+                    "stringValue": "[{"role":"user","parts":[{"type":"text","content":"help"}]}]",
+                  },
+                },
+                {
+                  "key": "gen_ai.output.messages",
+                  "value": {
+                    "stringValue": "[{"role":"assistant","parts":[{"type":"text","content":"the plan"}]}]",
+                  },
+                },
+              ],
+              "endTimeUnixNano": "1751400000900000000",
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "plan",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "spanId": "bbbbbbbbbbbbbbbb",
+              "startTimeUnixNano": "1751400000100000000",
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+            },
+            {
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "execute_tool",
+                  },
+                },
+                {
+                  "key": "gen_ai.tool.name",
+                  "value": {
+                    "stringValue": "search-kb",
+                  },
+                },
+                {
+                  "key": "input.value",
+                  "value": {
+                    "stringValue": "{"q":"refunds"}",
+                  },
+                },
+                {
+                  "key": "error.message",
+                  "value": {
+                    "stringValue": "kb timeout",
+                  },
+                },
+                {
+                  "key": "glassray.span.auto_closed",
+                  "value": {
+                    "boolValue": true,
+                  },
+                },
+              ],
+              "endTimeUnixNano": "1751400001200000000",
+              "kind": "SPAN_KIND_INTERNAL",
+              "name": "search-kb",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "spanId": "cccccccccccccccc",
+              "startTimeUnixNano": "1751400000950000000",
+              "status": {
+                "code": "STATUS_CODE_ERROR",
+              },
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;
