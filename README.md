@@ -1,3 +1,5 @@
+![Glassray](https://glassray.ai/docs/images/glassray_cover.jpeg)
+
 # @glassray/tracing
 
 Zero-dependency tracing for AI agents. Wrap your agent's entrypoint and every run lands
