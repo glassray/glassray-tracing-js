@@ -24,8 +24,10 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      # Trusted publishing requires npm >= 11.5.1.
-      - run: npm install -g npm@latest
+      # Trusted publishing requires npm >= 11.5.1 — Node 24's bundled npm
+      # satisfies that. Do NOT self-upgrade npm here: overwriting the running
+      # npm can corrupt its bundled deps (missing `sigstore` → publish crash).
+      - run: npm --version
       - run: npm ci --no-audit --no-fund
       # Re-run the CI gates — a tag can't ship code that doesn't pass them.
       - run: npx tsc --noEmit

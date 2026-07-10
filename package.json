@@ -1,6 +1,6 @@
 {
   "name": "@glassray/tracing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Zero-dependency tracing SDK that sends your agent runs to Glassray",
   "license": "MIT",
   "type": "module",
