@@ -2,6 +2,11 @@
 
 # @glassray/tracing
 
+[![npm](https://img.shields.io/npm/v/@glassray/tracing.svg)](https://www.npmjs.com/package/@glassray/tracing)
+[![CI](https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml/badge.svg)](https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml)
+[![Socket](https://socket.dev/api/badge/npm/package/@glassray/tracing)](https://socket.dev/npm/package/@glassray/tracing)
+[![install size](https://packagephobia.com/badge?p=@glassray/tracing)](https://packagephobia.com/result?p=@glassray/tracing)
+
 Zero-dependency tracing for AI agents. Wrap your agent's entrypoint and every run lands
 in [Glassray](https://glassray.ai) as a full trace — LLM calls, tool calls,
 inputs/outputs, timing, nesting, tokens, errors.

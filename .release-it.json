@@ -8,7 +8,9 @@
     "tag": true,
     "tagName": "v${version}",
     "push": true,
-    "pushArgs": ["--follow-tags"]
+    "pushArgs": [
+      "--follow-tags"
+    ]
   },
   "npm": {
     "publish": false
@@ -20,8 +22,11 @@
     "web": true
   },
   "hooks": {
-    "before:init": ["pnpm typecheck", "pnpm lint", "pnpm test"],
-    "after:bump": "pnpm build",
-    "after:release": "pnpm publish --no-git-checks"
+    "before:init": [
+      "pnpm typecheck",
+      "pnpm lint",
+      "pnpm test"
+    ],
+    "after:bump": "pnpm build"
   }
 }

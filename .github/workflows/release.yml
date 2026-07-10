@@ -1,0 +1,40 @@
+# Publishes to npm when a release tag lands. The local `pnpm release`
+# (release-it) still owns gates/bump/build/commit/tag/push + the GitHub
+# release; this workflow owns the npm publish, via npm trusted publishing
+# (OIDC) — no maintainer laptop and no long-lived npm token in the publish
+# path, and npm attaches a provenance attestation automatically.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  # OIDC token for npm trusted publishing — the only credential used.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      # Trusted publishing requires npm >= 11.5.1.
+      - run: npm install -g npm@latest
+      - run: npm ci --no-audit --no-fund
+      # Re-run the CI gates — a tag can't ship code that doesn't pass them.
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npx vitest run
+      - run: npm audit --audit-level=critical
+      - run: npx tsup
+      # Pack with pnpm, not npm: pnpm rewrites the dev `exports` (which points
+      # at TypeScript source for the monorepo) from `publishConfig` to dist/
+      # at pack time — see RELEASING.md. npm then publishes the tarball.
+      - run: npx pnpm@10 pack
+      - run: npm publish ./glassray-tracing-*.tgz

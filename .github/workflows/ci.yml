@@ -17,8 +17,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # No lockfile yet (the package has zero runtime deps); plain install.
-      - run: npm install --no-audit --no-fund
+          cache: npm
+          cache-dependency-path: package-lock.json
+      # Reproducible install from the committed lockfile — the build toolchain is
+      # pinned, so a compromised devDep release can't silently enter a CI run.
+      - run: npm ci --no-audit --no-fund
+      # Vulnerability gate. Runtime deps are zero by design, so this audits the
+      # dev toolchain only — gate on critical to stay signal, not noise.
+      - run: npm audit --audit-level=critical
       - run: npx tsc --noEmit
       - run: npx eslint .
       - run: npx vitest run
