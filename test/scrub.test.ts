@@ -43,7 +43,6 @@ const traceWithInput = (input: unknown): SettledTrace => ({
 /** Serializer config fixture. */
 const cfg = (over: Partial<SerializeConfig> = {}): SerializeConfig => ({
   agent: undefined,
-  environment: undefined,
   customer: undefined,
   hideInputs: false,
   hideOutputs: false,

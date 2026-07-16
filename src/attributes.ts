@@ -49,11 +49,8 @@ export const TRACE_ATTR = {
   GLASSRAY_SPAN_AUTO_CLOSED: "glassray.span.auto_closed",
   // Glassray metadata convention — resource-level defaults, root-span override wins.
   GLASSRAY_CUSTOMER: "glassray.customer",
-  GLASSRAY_ENVIRONMENT: "glassray.environment",
   GLASSRAY_AGENT: "glassray.agent",
   GLASSRAY_FLOW: "glassray.flow",
-  /** Honored standard alias for `glassray.environment`. */
-  DEPLOYMENT_ENVIRONMENT_NAME: "deployment.environment.name",
 } as const;
 
 /** `gen_ai.operation.name` values the SDK emits, per span kind. */

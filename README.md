@@ -69,14 +69,15 @@ throws — the SDK warns and disables itself (fail-open extends to misconfigurat
 | `scrubbing`    | —                       | `true`                    | Scrub secret-shaped keys (`password`, `api_key`, `token`, …) inside captured I/O.                                                                     |
 | `redact`       | —                       | —                         | `(key, value) => value` hook over content attributes. Fail-closed: if it throws, the value is withheld.                                               |
 | `agent`        | —                       | —                         | Default metadata on every trace (see below).                                                                                                          |
-| `environment`  | —                       | —                         | Default metadata, e.g. `production` / `staging` / `local`.                                                                                            |
+| `environment`  | —                       | —                         | **Deprecated, ignored since 0.1.3.** Still accepted so existing code compiles, but setting it warns once and has no effect — the ingest key selects the project. |
 | `customer`     | —                       | —                         | Default metadata; usually set per trace instead.                                                                                                      |
 | `onWarn`       | —                       | console                   | Receives the SDK's rate-limited warnings instead of the console.                                                                                      |
 | —              | `GLASSRAY_DEBUG`        | `false`                   | Verbose diagnostics (queue, transport, drops).                                                                                                        |
 
-Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`, `environment`) goes in
+Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`) goes in
 the second argument of `glassray.trace(name, meta, fn)` and overrides the constructor
-defaults. It lands in Glassray as filterable trace tags.
+defaults. It lands in Glassray as filterable trace tags. (`environment` is still accepted
+here for compile compatibility but is ignored since 0.1.3 — the ingest key selects the project.)
 
 ## Serverless
 

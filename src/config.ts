@@ -15,7 +15,7 @@ export type GlassrayOptions = {
   endpoint?: string;
   /** Agent name — resource-level metadata default (`glassray.agent`, `service.name`). */
   agent?: string;
-  /** Environment name — resource-level metadata default (`glassray.environment`). */
+  /** @deprecated Ignored since 0.1.3 — the ingest key selects the project. Still accepted for compile compatibility; setting it warns once and no longer affects routing or emission. */
   environment?: string;
   /** Customer identifier — resource-level metadata default (`glassray.customer`). */
   customer?: string;
@@ -53,7 +53,6 @@ export type ResolvedConfig = {
   /** Full OTLP traces URL (endpoint already resolved/appended). */
   endpoint: string;
   agent: string | undefined;
-  environment: string | undefined;
   customer: string | undefined;
   redact: ((attrKey: string, value: unknown) => unknown) | undefined;
   sampleRate: number;
@@ -102,6 +101,15 @@ export const resolveEndpoint = (value: string): string => {
 export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedConfig => {
   try {
     const enabled = options.enabled ?? envBool(envVar("GLASSRAY_TRACING")) ?? true;
+
+    // `environment` is deprecated since 0.1.3: the ingest key selects the project.
+    // Accept it for compile compatibility but warn once and drop it from routing/emission.
+    if (options.environment !== undefined) {
+      warn(
+        "config.environment",
+        "the `environment` option is deprecated and ignored since 0.1.3 — the ingest key selects the project",
+      );
+    }
 
     // Sample rate: empty/whitespace env is unset (Number("") is 0, which would
     // silently drop everything); invalid → warn + default 1 (trace everything).
@@ -155,7 +163,6 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       apiKey,
       endpoint,
       agent: options.agent,
-      environment: options.environment,
       customer: options.customer,
       redact: options.redact,
       sampleRate,
@@ -173,7 +180,6 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       apiKey: undefined,
       endpoint: resolveEndpoint(DEFAULT_ENDPOINT_BASE),
       agent: undefined,
-      environment: undefined,
       customer: undefined,
       redact: undefined,
       sampleRate: 1,
