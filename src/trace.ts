@@ -134,6 +134,15 @@ export class TraceBuffer {
     this.meta = args.meta;
     this.warn = args.warn;
     this.onSettle = args.onSettle;
+    // `environment` supplied per-trace (not just on the constructor) is equally
+    // deprecated + ignored since 0.1.3 — warn here too so the per-trace path
+    // isn't silently dropped without the migration signal.
+    if (args.meta.environment !== undefined) {
+      this.warn(
+        "trace.environment",
+        "the `environment` trace metadata is deprecated and ignored since 0.1.3 — the ingest key selects the project",
+      );
+    }
     const requested = args.meta.traceId;
     if (requested !== undefined && !VALID_TRACE_ID.test(requested)) {
       this.warn(

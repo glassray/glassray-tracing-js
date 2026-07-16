@@ -1,8 +1,8 @@
 /*
  * Deprecation contract for the retired `environment` option (0.1.3): the SDK
- * still accepts it (constructor and per-trace `meta`) for compile
- * compatibility, warns exactly once, and never puts `glassray.environment` on
- * the wire — the ingest key selects the project.
+ * still accepts it — on the constructor AND per-trace `meta` — for compile
+ * compatibility, warns once on EACH surface, and never puts
+ * `glassray.environment` on the wire (the ingest key selects the project).
  */
 
 import { describe, expect, it } from "vitest";
@@ -16,7 +16,7 @@ const capturingFetch = (bodies: string[]): typeof fetch =>
   }) as unknown as typeof fetch;
 
 describe("environment option deprecation", () => {
-  it("accepts `environment`, warns once, and emits no glassray.environment", async () => {
+  it("warns once for the CONSTRUCTOR option and emits no glassray.environment", async () => {
     const warnings: string[] = [];
     const bodies: string[] = [];
     const glassray = new Glassray({
@@ -26,15 +26,34 @@ describe("environment option deprecation", () => {
       fetch: capturingFetch(bodies),
     });
 
+    // No per-trace environment here — only the constructor path should warn.
+    await glassray.trace("run", {}, async (t) => {
+      await t.tool("step", async () => "ok");
+    });
+    await glassray.flush();
+
+    expect(warnings.filter((m) => m.includes("environment"))).toHaveLength(1);
+    expect(bodies.length).toBeGreaterThan(0);
+    expect(bodies.join("\n")).not.toContain("glassray.environment");
+  });
+
+  it("warns once for PER-TRACE meta.environment (no constructor option) and emits nothing", async () => {
+    const warnings: string[] = [];
+    const bodies: string[] = [];
+    const glassray = new Glassray({
+      apiKey: "sk_test",
+      onWarn: (m) => warnings.push(m),
+      fetch: capturingFetch(bodies),
+    });
+
+    // `environment` ONLY on the per-trace meta — the constructor never sets it,
+    // so the per-trace warning is the one under test (greptile PR #1).
     await glassray.trace("run", { environment: "staging" }, async (t) => {
       await t.tool("step", async () => "ok");
     });
     await glassray.flush();
 
-    // Warned exactly once about the deprecated option.
-    const envWarnings = warnings.filter((m) => m.includes("environment"));
-    expect(envWarnings).toHaveLength(1);
-    // A trace shipped, and nothing on it carries the retired attribute.
+    expect(warnings.filter((m) => m.includes("environment"))).toHaveLength(1);
     expect(bodies.length).toBeGreaterThan(0);
     expect(bodies.join("\n")).not.toContain("glassray.environment");
   });
