@@ -19,12 +19,6 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
             },
           },
           {
-            "key": "glassray.environment",
-            "value": {
-              "stringValue": "prod",
-            },
-          },
-          {
             "key": "glassray.customer",
             "value": {
               "stringValue": "default-co",
@@ -69,12 +63,6 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
                   "key": "glassray.flow",
                   "value": {
                     "stringValue": "refunds",
-                  },
-                },
-                {
-                  "key": "glassray.environment",
-                  "value": {
-                    "stringValue": "staging",
                   },
                 },
                 {

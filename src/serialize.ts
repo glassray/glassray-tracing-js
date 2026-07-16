@@ -33,7 +33,6 @@ const MAX_DEPTH = 8;
 /** The subset of resolved config the serializer needs (metadata defaults + privacy switches). */
 export type SerializeConfig = {
   agent: string | undefined;
-  environment: string | undefined;
   customer: string | undefined;
   hideInputs: boolean;
   hideOutputs: boolean;
@@ -233,7 +232,6 @@ const buildSpanAttrs = (
   if (span.isRoot) {
     put(TRACE_ATTR.GLASSRAY_CUSTOMER, trace.customer);
     put(TRACE_ATTR.GLASSRAY_FLOW, trace.flow);
-    put(TRACE_ATTR.GLASSRAY_ENVIRONMENT, trace.environment);
   }
 
   // Content: llm spans carry role+parts messages; everything else generic I/O.
@@ -279,7 +277,6 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
   };
   putResource("service.name", cfg.agent);
   putResource(TRACE_ATTR.GLASSRAY_AGENT, cfg.agent);
-  putResource(TRACE_ATTR.GLASSRAY_ENVIRONMENT, cfg.environment);
   putResource(TRACE_ATTR.GLASSRAY_CUSTOMER, cfg.customer);
   putResource(TRACE_ATTR.SESSION_ID, trace.sessionId);
 

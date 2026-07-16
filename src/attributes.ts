@@ -49,10 +49,11 @@ export const TRACE_ATTR = {
   GLASSRAY_SPAN_AUTO_CLOSED: "glassray.span.auto_closed",
   // Glassray metadata convention — resource-level defaults, root-span override wins.
   GLASSRAY_CUSTOMER: "glassray.customer",
+  /** @deprecated Ignored since 0.1.3 — the ingest key selects the project. Kept only so existing `TRACE_ATTR.GLASSRAY_ENVIRONMENT` references still compile; never emitted. */
   GLASSRAY_ENVIRONMENT: "glassray.environment",
   GLASSRAY_AGENT: "glassray.agent",
   GLASSRAY_FLOW: "glassray.flow",
-  /** Honored standard alias for `glassray.environment`. */
+  /** @deprecated Ignored since 0.1.3 — the ingest key selects the project. Kept only so existing `TRACE_ATTR.DEPLOYMENT_ENVIRONMENT_NAME` references still compile; never emitted. */
   DEPLOYMENT_ENVIRONMENT_NAME: "deployment.environment.name",
 } as const;
 

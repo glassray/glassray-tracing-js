@@ -17,7 +17,6 @@ import type { SettledTrace, SpanRecord } from "../src/trace.js";
 /** Serializer config with all switches at their defaults. */
 const cfg = (over: Partial<SerializeConfig> = {}): SerializeConfig => ({
   agent: undefined,
-  environment: undefined,
   customer: undefined,
   hideInputs: false,
   hideOutputs: false,
@@ -167,13 +166,16 @@ describe("golden OTLP JSON", () => {
           autoClosed: true,
         }),
       ],
+      // `environment` is still accepted on the SettledTrace (deprecated) but must
+      // never reach the wire — the golden snapshot asserts its absence.
       { sessionId: "sess-9", customer: "acme", flow: "refunds", environment: "staging" },
     );
     const body = serializeTrace(
       fixture,
-      cfg({ agent: "support-agent", environment: "prod", customer: "default-co" }),
+      cfg({ agent: "support-agent", customer: "default-co" }),
       noWarn,
     );
+    expect(body).not.toContain("glassray.environment");
     expect(JSON.parse(body)).toMatchSnapshot();
   });
 });
