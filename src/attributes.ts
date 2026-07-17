@@ -47,6 +47,8 @@ export const TRACE_ATTR = {
   GLASSRAY_SPAN_KIND: "glassray.span.kind",
   /** Stamped `true` on spans still open when the root settled (auto-closed by the SDK). */
   GLASSRAY_SPAN_AUTO_CLOSED: "glassray.span.auto_closed",
+  /** Pre-computed USD cost on an `llm` span; overrides the platform's tokens×price estimate at ingest. */
+  GLASSRAY_USAGE_COST: "glassray.usage.cost",
   // Glassray metadata convention — resource-level defaults, root-span override wins.
   GLASSRAY_CUSTOMER: "glassray.customer",
   /** @deprecated Ignored since 0.1.3 — the ingest key selects the project. Kept only so existing `TRACE_ATTR.GLASSRAY_ENVIRONMENT` references still compile; never emitted. */

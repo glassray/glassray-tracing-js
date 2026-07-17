@@ -4,8 +4,13 @@
  * schema that `gen_ai.input.messages` / `gen_ai.output.messages` carry.
  */
 
-/** Best-effort token usage extracted from a provider response (or set explicitly via `setUsage`). */
-export type Usage = { inputTokens?: number; outputTokens?: number };
+/**
+ * Best-effort token usage extracted from a provider response (or set explicitly
+ * via `setUsage`). `cost` is an optional pre-computed USD figure — when present
+ * it OVERRIDES the platform's tokens×price estimate at ingest (via the
+ * `glassray.usage.cost` attribute); leave it unset to let the platform compute.
+ */
+export type Usage = { inputTokens?: number; outputTokens?: number; cost?: number };
 
 /** One OTel role+parts chat message — the element shape inside `gen_ai.*.messages` JSON strings. */
 export type OtelMessage = { role: string; parts: { type: string; content: unknown }[] };
@@ -20,8 +25,9 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 
 /**
  * Extract token usage from a provider response: Anthropic
- * `usage.{input,output}_tokens` or OpenAI `usage.{prompt,completion}_tokens`.
- * `undefined` when neither shape is present.
+ * `usage.{input,output}_tokens` or OpenAI `usage.{prompt,completion}_tokens`,
+ * plus a best-effort `usage.cost`/`usage.total_cost` (gateways like OpenRouter
+ * return one). `undefined` when none of the three is present.
  */
 export const extractUsage = (result: unknown): Usage | undefined => {
   if (!isObject(result)) return undefined;
@@ -29,8 +35,9 @@ export const extractUsage = (result: unknown): Usage | undefined => {
   if (!isObject(usage)) return undefined;
   const inputTokens = numOr(usage.input_tokens) ?? numOr(usage.prompt_tokens);
   const outputTokens = numOr(usage.output_tokens) ?? numOr(usage.completion_tokens);
-  if (inputTokens === undefined && outputTokens === undefined) return undefined;
-  return { inputTokens, outputTokens };
+  const cost = numOr(usage.cost) ?? numOr(usage.total_cost);
+  if (inputTokens === undefined && outputTokens === undefined && cost === undefined) return undefined;
+  return { inputTokens, outputTokens, cost };
 };
 
 /** True when `value` looks like a `{role, content}[]` chat-message array. */

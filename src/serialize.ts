@@ -227,6 +227,16 @@ const buildSpanAttrs = (
   if (span.usage?.outputTokens !== undefined) {
     put(TRACE_ATTR.GEN_AI_USAGE_OUTPUT_TOKENS, span.usage.outputTokens);
   }
+  // Only emit a finite, non-negative cost: an unvalidated `setUsage({ cost })`
+  // or a bad gateway value (NaN → serializes as null, or a negative) must not
+  // override the platform's valid token-based estimate with an invalid amount.
+  if (
+    span.usage?.cost !== undefined &&
+    Number.isFinite(span.usage.cost) &&
+    span.usage.cost >= 0
+  ) {
+    put(TRACE_ATTR.GLASSRAY_USAGE_COST, span.usage.cost);
+  }
 
   // Per-trace metadata overrides ride the ROOT span (root wins over resource).
   if (span.isRoot) {
