@@ -227,6 +227,9 @@ const buildSpanAttrs = (
   if (span.usage?.outputTokens !== undefined) {
     put(TRACE_ATTR.GEN_AI_USAGE_OUTPUT_TOKENS, span.usage.outputTokens);
   }
+  if (span.usage?.cost !== undefined) {
+    put(TRACE_ATTR.GLASSRAY_USAGE_COST, span.usage.cost);
+  }
 
   // Per-trace metadata overrides ride the ROOT span (root wins over resource).
   if (span.isRoot) {

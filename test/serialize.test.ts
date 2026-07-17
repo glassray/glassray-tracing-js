@@ -179,3 +179,45 @@ describe("golden OTLP JSON", () => {
     expect(JSON.parse(body)).toMatchSnapshot();
   });
 });
+
+describe("llm usage cost", () => {
+  /** Read numeric (int/double) attribute values for `key` out of a serialized body. */
+  const attrNumbers = (body: string, key: string): number[] => {
+    const doc = JSON.parse(body) as {
+      resourceSpans: {
+        scopeSpans: {
+          spans: { attributes: { key: string; value: { intValue?: string; doubleValue?: number } }[] }[];
+        }[];
+      }[];
+    };
+    return doc.resourceSpans
+      .flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans))
+      .flatMap((s) => s.attributes.filter((a) => a.key === key))
+      .map((a) => a.value.doubleValue ?? Number(a.value.intValue));
+  };
+
+  it("emits glassray.usage.cost when cost is set on usage (overrides the platform estimate)", () => {
+    const body = serializeTrace(
+      trace([
+        span({
+          isRoot: true,
+          kind: "llm",
+          model: "gpt-4o",
+          usage: { inputTokens: 10, outputTokens: 5, cost: 0.42 },
+        }),
+      ]),
+      cfg(),
+      noWarn,
+    );
+    expect(attrNumbers(body, "glassray.usage.cost")).toEqual([0.42]);
+  });
+
+  it("omits glassray.usage.cost when cost is unset (platform computes from tokens×price)", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "llm", model: "gpt-4o", usage: { inputTokens: 10, outputTokens: 5 } })]),
+      cfg(),
+      noWarn,
+    );
+    expect(attrNumbers(body, "glassray.usage.cost")).toEqual([]);
+  });
+});
