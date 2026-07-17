@@ -220,4 +220,24 @@ describe("llm usage cost", () => {
     );
     expect(attrNumbers(body, "glassray.usage.cost")).toEqual([]);
   });
+
+  it("omits an invalid cost (NaN / negative) so it can't override the platform estimate", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -0.01]) {
+      const body = serializeTrace(
+        trace([span({ isRoot: true, kind: "llm", model: "gpt-4o", usage: { inputTokens: 10, cost: bad } })]),
+        cfg(),
+        noWarn,
+      );
+      expect(attrNumbers(body, "glassray.usage.cost")).toEqual([]);
+    }
+  });
+
+  it("emits a zero cost (a legitimate free/cached call)", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "llm", model: "gpt-4o", usage: { inputTokens: 10, cost: 0 } })]),
+      cfg(),
+      noWarn,
+    );
+    expect(attrNumbers(body, "glassray.usage.cost")).toEqual([0]);
+  });
 });
