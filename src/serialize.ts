@@ -34,10 +34,76 @@ const MAX_DEPTH = 8;
 export type SerializeConfig = {
   agent: string | undefined;
   customer: string | undefined;
+  /** Resource-level custom attribute defaults (per-process), emitted verbatim (APP-14941). */
+  attributes: Record<string, string | number | boolean> | undefined;
   hideInputs: boolean;
   hideOutputs: boolean;
   scrubbing: boolean;
   redact: ((attrKey: string, value: unknown) => unknown) | undefined;
+};
+
+/**
+ * Attribute-key prefixes reserved by the Glassray / OTel contract — a custom
+ * attribute may NOT use them, or it would clobber a first-class field the ingest
+ * normalizer reads (customer/agent/flow/depth, gen_ai.*, session, I/O, infra
+ * semconv). Dropped-with-a-warning at emit time so a stray `glassray.customer`
+ * in a user's `attributes` map can't shadow the real convention value.
+ */
+const RESERVED_ATTRIBUTE_PREFIXES = [
+  "glassray.",
+  "gen_ai.",
+  "otel.",
+  "telemetry.",
+  "service.",
+  "session.",
+  "input.",
+  "output.",
+  "error.",
+  "deployment.",
+] as const;
+
+/** Max chars of a custom attribute value emitted on the wire — these are filter facets, not content. */
+const MAX_ATTRIBUTE_VALUE_CHARS = 256;
+
+/** True when a custom-attribute key collides with a reserved namespace. */
+const isReservedAttributeKey = (key: string): boolean =>
+  RESERVED_ATTRIBUTE_PREFIXES.some((p) => key.startsWith(p));
+
+/**
+ * Emit a custom-attribute map onto `put`, verbatim (APP-14941). Skips reserved
+ * keys (warned), non-scalar / non-finite values, and truncates long strings —
+ * these attributes are meant to be low-cardinality filter facets, not content.
+ */
+const emitCustomAttributes = (
+  put: (key: string, v: string | number | boolean) => void,
+  attrs: Record<string, string | number | boolean> | undefined,
+  warn: Warner,
+): void => {
+  if (!attrs) return;
+  for (const [key, raw] of Object.entries(attrs)) {
+    if (key.length === 0) continue;
+    if (isReservedAttributeKey(key)) {
+      // Per-key warn scope — the rate-limiter dedupes by scope, so a shared scope
+      // would silence every reserved key after the first. Each drop must warn.
+      warn(`serialize.attribute.${key}`, `custom attribute "${key}" uses a reserved namespace — dropped`);
+      continue;
+    }
+    if (typeof raw === "string") {
+      // Truncate by Unicode code points, not UTF-16 code units, so a cut never
+      // splits a surrogate pair (emoji) into a dangling half on the wire.
+      const codePoints = Array.from(raw);
+      const v =
+        codePoints.length > MAX_ATTRIBUTE_VALUE_CHARS
+          ? codePoints.slice(0, MAX_ATTRIBUTE_VALUE_CHARS).join("")
+          : raw;
+      put(key, v);
+    } else if (typeof raw === "number") {
+      if (Number.isFinite(raw)) put(key, raw);
+    } else if (typeof raw === "boolean") {
+      put(key, raw);
+    }
+    // Objects / arrays / null are skipped — a facet value must be a scalar.
+  }
 };
 
 /** Byte length of a string in UTF-8 (Buffer.byteLength counts without allocating a copy). */
@@ -189,6 +255,7 @@ const buildSpanAttrs = (
   trace: SettledTrace,
   cfg: SerializeConfig,
   refs: ContentRef[],
+  warn: Warner,
 ): OtlpAttr[] => {
   const attrs: OtlpAttr[] = [];
   const put = (key: string, v: string | number | boolean | undefined): void => {
@@ -242,6 +309,9 @@ const buildSpanAttrs = (
   if (span.isRoot) {
     put(TRACE_ATTR.GLASSRAY_CUSTOMER, trace.customer);
     put(TRACE_ATTR.GLASSRAY_FLOW, trace.flow);
+    // Per-trace custom attributes (APP-14941) also ride the root span, so they
+    // override any resource-level default of the same key at ingest.
+    emitCustomAttributes(put, trace.attributes, warn);
   }
 
   // Content: llm spans carry role+parts messages; everything else generic I/O.
@@ -289,6 +359,13 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
   putResource(TRACE_ATTR.GLASSRAY_AGENT, cfg.agent);
   putResource(TRACE_ATTR.GLASSRAY_CUSTOMER, cfg.customer);
   putResource(TRACE_ATTR.SESSION_ID, trace.sessionId);
+  // Resource-level custom attribute defaults (APP-14941) — per-process, emitted
+  // verbatim; a per-trace `meta.attributes` of the same key overrides on the root.
+  emitCustomAttributes(
+    (key, v) => resourceAttrs.push({ key, value: attrValue(v) }),
+    cfg.attributes,
+    warn,
+  );
 
   const spans = trace.spans.map((span) => ({
     traceId: trace.traceId,
@@ -298,7 +375,7 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
     kind: "SPAN_KIND_INTERNAL",
     startTimeUnixNano: msToNano(span.startMs),
     endTimeUnixNano: msToNano(span.endMs ?? span.startMs),
-    attributes: buildSpanAttrs(span, trace, cfg, refs),
+    attributes: buildSpanAttrs(span, trace, cfg, refs, warn),
     ...(span.errorMessage !== undefined ? { status: { code: "STATUS_CODE_ERROR" } } : {}),
   }));
 

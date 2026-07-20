@@ -19,6 +19,16 @@ export type GlassrayOptions = {
   environment?: string;
   /** Customer identifier — resource-level metadata default (`glassray.customer`). */
   customer?: string;
+  /**
+   * Arbitrary custom attributes attached to every trace as **resource-level
+   * defaults** (per-process). Emitted verbatim as OTLP resource attributes, so
+   * Glassray can filter traces by them (APP-14941) — e.g.
+   * `{ environment: "production", region: "eu" }`. Values are scalar
+   * (string / number / boolean); a per-trace `meta.attributes` of the same key
+   * overrides one here. Keys under a reserved namespace (`glassray.*`,
+   * `gen_ai.*`, and the OTel infra prefixes) are dropped with a warning.
+   */
+  attributes?: Record<string, string | number | boolean>;
   /** Redaction hook applied to every content attribute before send. Fail-closed: a throw withholds the value. */
   redact?: (attrKey: string, value: unknown) => unknown;
   /** Sampling rate 0–1, decided once at trace start (whole-trace coherent). Default 1. */
@@ -54,6 +64,8 @@ export type ResolvedConfig = {
   endpoint: string;
   agent: string | undefined;
   customer: string | undefined;
+  /** Resource-level custom attribute defaults (per-process), emitted verbatim. */
+  attributes: Record<string, string | number | boolean> | undefined;
   redact: ((attrKey: string, value: unknown) => unknown) | undefined;
   sampleRate: number;
   scrubbing: boolean;
@@ -164,6 +176,7 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       endpoint,
       agent: options.agent,
       customer: options.customer,
+      attributes: options.attributes,
       redact: options.redact,
       sampleRate,
       scrubbing: options.scrubbing ?? true,
@@ -181,6 +194,7 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       endpoint: resolveEndpoint(DEFAULT_ENDPOINT_BASE),
       agent: undefined,
       customer: undefined,
+      attributes: undefined,
       redact: undefined,
       sampleRate: 1,
       scrubbing: true,

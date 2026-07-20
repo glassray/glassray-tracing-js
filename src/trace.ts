@@ -22,6 +22,14 @@ export type TraceMeta = {
   /** 32-char hex trace id (e.g. from `createTraceId`); invalid values warn and fall back to random. */
   traceId?: string;
   environment?: string;
+  /**
+   * Arbitrary custom attributes for THIS trace, emitted verbatim as root-span
+   * attributes (overriding any resource-level default of the same key). Lets
+   * Glassray filter traces by them (APP-14941) — e.g.
+   * `{ merchantId: "acme", branch: "master" }`. Scalar values only; reserved
+   * (`glassray.*` / `gen_ai.*` / OTel infra) keys are dropped with a warning.
+   */
+  attributes?: Record<string, string | number | boolean>;
 };
 
 /** Options accepted by the span helpers (`t.span`, `t.tool`, `t.startSpan`). */
@@ -72,6 +80,8 @@ export type SettledTrace = {
   customer: string | undefined;
   flow: string | undefined;
   environment: string | undefined;
+  /** Per-trace custom attributes → root-span attribute overrides (APP-14941). */
+  attributes: Record<string, string | number | boolean> | undefined;
   spans: SpanRecord[];
 };
 
@@ -211,6 +221,7 @@ export class TraceBuffer {
       customer: this.meta.customer,
       flow: this.meta.flow,
       environment: this.meta.environment,
+      attributes: this.meta.attributes,
       spans: this.spans,
     });
   }
