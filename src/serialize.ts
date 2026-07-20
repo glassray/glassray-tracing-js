@@ -83,12 +83,20 @@ const emitCustomAttributes = (
   for (const [key, raw] of Object.entries(attrs)) {
     if (key.length === 0) continue;
     if (isReservedAttributeKey(key)) {
-      warn("serialize.attribute", `custom attribute "${key}" uses a reserved namespace — dropped`);
+      // Per-key warn scope — the rate-limiter dedupes by scope, so a shared scope
+      // would silence every reserved key after the first. Each drop must warn.
+      warn(`serialize.attribute.${key}`, `custom attribute "${key}" uses a reserved namespace — dropped`);
       continue;
     }
     if (typeof raw === "string") {
-      const v = raw.length > MAX_ATTRIBUTE_VALUE_CHARS ? raw.slice(0, MAX_ATTRIBUTE_VALUE_CHARS) : raw;
-      if (v.length > 0) put(key, v);
+      // Truncate by Unicode code points, not UTF-16 code units, so a cut never
+      // splits a surrogate pair (emoji) into a dangling half on the wire.
+      const codePoints = Array.from(raw);
+      const v =
+        codePoints.length > MAX_ATTRIBUTE_VALUE_CHARS
+          ? codePoints.slice(0, MAX_ATTRIBUTE_VALUE_CHARS).join("")
+          : raw;
+      put(key, v);
     } else if (typeof raw === "number") {
       if (Number.isFinite(raw)) put(key, raw);
     } else if (typeof raw === "boolean") {

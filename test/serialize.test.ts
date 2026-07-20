@@ -361,6 +361,30 @@ describe("custom attributes (APP-14941)", () => {
     expect(attrs.nil).toBeUndefined();
   });
 
+  it("truncates a long value by code points, never splitting a surrogate pair", () => {
+    // 300 emoji (each 1 code point, 2 UTF-16 units) — a naive slice(0,256) would
+    // cut mid-pair and emit a lone surrogate.
+    const value = "😀".repeat(300);
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], { attributes: { emojis: value } }),
+      cfg(),
+      noWarn,
+    );
+    const out = String(rootSpanAttrs(body).emojis);
+    // Cut cleanly at 256 whole code points — every emoji intact, no lone surrogate.
+    expect([...out]).toHaveLength(256);
+    expect(out).toBe("😀".repeat(256));
+  });
+
+  it("emits an empty-string value rather than silently dropping it", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], { attributes: { blank: "" } }),
+      cfg(),
+      noWarn,
+    );
+    expect(rootSpanAttrs(body).blank).toBe("");
+  });
+
   it("adds no attributes when none are set (clean baseline)", () => {
     const body = serializeTrace(trace([span({ isRoot: true, kind: "agent" })]), cfg(), noWarn);
     const attrs = { ...resourceAttrs(body), ...rootSpanAttrs(body) };
