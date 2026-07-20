@@ -71,6 +71,7 @@ throws — the SDK warns and disables itself (fail-open extends to misconfigurat
 | `agent`        | —                       | —                         | Default metadata on every trace (see below).                                                                                                          |
 | `environment`  | —                       | —                         | **Deprecated, ignored since 0.1.3.** Still accepted so existing code compiles, but setting it warns once and has no effect — the ingest key selects the project. |
 | `customer`     | —                       | —                         | Default metadata; usually set per trace instead.                                                                                                      |
+| `attributes`   | —                       | —                         | Custom attributes (per-process defaults) attached to every trace, e.g. `{ environment: "production", region: "eu" }`. Filterable in Glassray. Reserved (`glassray.*` / `gen_ai.*`) keys are dropped. See below. |
 | `onWarn`       | —                       | console                   | Receives the SDK's rate-limited warnings instead of the console.                                                                                      |
 | —              | `GLASSRAY_DEBUG`        | `false`                   | Verbose diagnostics (queue, transport, drops).                                                                                                        |
 
@@ -78,6 +79,32 @@ Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`) goes in
 the second argument of `glassray.trace(name, meta, fn)` and overrides the constructor
 defaults. It lands in Glassray as filterable trace tags. (`environment` is still accepted
 here for compile compatibility but is ignored since 0.1.3 — the ingest key selects the project.)
+
+### Custom attributes
+
+Beyond `customer` / `agent` / `flow`, attach **any** custom attributes and filter your
+traces by them in the dashboard — e.g. by `merchantId`, `branch`, or `region`. Set
+per-process defaults on the constructor and override (or add) per trace in `meta.attributes`:
+
+```ts
+const glassray = new Glassray({
+  agent: "support-agent",
+  attributes: { region: "eu", tier: "enterprise" }, // resource-level defaults
+});
+
+await glassray.trace(
+  "handle-ticket",
+  { customer: "acme-corp", attributes: { merchantId: "acme", branch: "master" } },
+  async (t) => { ... },
+);
+```
+
+Values are scalar (string / number / boolean). A per-trace key overrides a constructor
+default of the same name. Keys under a reserved namespace (`glassray.*`, `gen_ai.*`, and
+the OTel infra prefixes like `service.*` / `session.*`) are dropped with a warning so a
+custom attribute can never shadow a first-class field. High-cardinality id-shaped values
+(UUIDs, hashes, long ids) are kept on the wire but not surfaced as filter options in the
+dashboard.
 
 ## Serverless
 

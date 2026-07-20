@@ -18,6 +18,7 @@ import type { SettledTrace, SpanRecord } from "../src/trace.js";
 const cfg = (over: Partial<SerializeConfig> = {}): SerializeConfig => ({
   agent: undefined,
   customer: undefined,
+  attributes: undefined,
   hideInputs: false,
   hideOutputs: false,
   scrubbing: true,
@@ -54,6 +55,7 @@ const trace = (spans: SpanRecord[], over: Partial<SettledTrace> = {}): SettledTr
   customer: undefined,
   flow: undefined,
   environment: undefined,
+  attributes: undefined,
   spans,
   ...over,
 });
@@ -239,5 +241,137 @@ describe("llm usage cost", () => {
       noWarn,
     );
     expect(attrNumbers(body, "glassray.usage.cost")).toEqual([0]);
+  });
+});
+
+describe("custom attributes (APP-14941)", () => {
+  /** Raw resource attributes as `{ key → value-union }` from a serialized body. */
+  const resourceAttrs = (body: string): Record<string, string | number | boolean> => {
+    const doc = JSON.parse(body) as {
+      resourceSpans: {
+        resource: {
+          attributes: {
+            key: string;
+            value: { stringValue?: string; intValue?: string; doubleValue?: number; boolValue?: boolean };
+          }[];
+        };
+      }[];
+    };
+    const out: Record<string, string | number | boolean> = {};
+    for (const { key, value } of doc.resourceSpans[0]?.resource.attributes ?? []) {
+      if (value.stringValue !== undefined) out[key] = value.stringValue;
+      else if (value.intValue !== undefined) out[key] = Number(value.intValue);
+      else if (value.doubleValue !== undefined) out[key] = value.doubleValue;
+      else if (value.boolValue !== undefined) out[key] = value.boolValue;
+    }
+    return out;
+  };
+
+  /** Raw attributes of the root span (`isRoot`) as `{ key → value }`. */
+  const rootSpanAttrs = (body: string): Record<string, string | number | boolean> => {
+    const doc = JSON.parse(body) as {
+      resourceSpans: {
+        scopeSpans: {
+          spans: {
+            parentSpanId?: string;
+            attributes: {
+              key: string;
+              value: { stringValue?: string; intValue?: string; doubleValue?: number; boolValue?: boolean };
+            }[];
+          }[];
+        }[];
+      }[];
+    };
+    const spans = doc.resourceSpans.flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans));
+    const root = spans.find((s) => s.parentSpanId === undefined);
+    const out: Record<string, string | number | boolean> = {};
+    for (const { key, value } of root?.attributes ?? []) {
+      if (value.stringValue !== undefined) out[key] = value.stringValue;
+      else if (value.intValue !== undefined) out[key] = Number(value.intValue);
+      else if (value.doubleValue !== undefined) out[key] = value.doubleValue;
+      else if (value.boolValue !== undefined) out[key] = value.boolValue;
+    }
+    return out;
+  };
+
+  it("emits constructor-level attributes verbatim as resource attributes", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })]),
+      cfg({ attributes: { environment: "production", region: "eu", replicas: 3, canary: true } }),
+      noWarn,
+    );
+    const attrs = resourceAttrs(body);
+    expect(attrs.environment).toBe("production");
+    expect(attrs.region).toBe("eu");
+    expect(attrs.replicas).toBe(3);
+    expect(attrs.canary).toBe(true);
+  });
+
+  it("emits per-trace attributes on the root span (override channel)", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], {
+        attributes: { merchantId: "acme-corp", branch: "master" },
+      }),
+      cfg(),
+      noWarn,
+    );
+    const attrs = rootSpanAttrs(body);
+    expect(attrs.merchantId).toBe("acme-corp");
+    expect(attrs.branch).toBe("master");
+  });
+
+  it("drops a reserved-namespace key and warns rather than shadowing the convention", () => {
+    const warnings: string[] = [];
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], {
+        attributes: { "glassray.customer": "evil", "gen_ai.request.model": "spoof", keep: "yes" },
+      }),
+      cfg({ customer: "real-co" }),
+      (scope, msg) => warnings.push(`${scope}:${msg}`),
+    );
+    const rootAttrs = rootSpanAttrs(body);
+    // The reserved keys never reach the wire from the custom map — and the
+    // spoofed customer never lands on the root span (its override channel)…
+    expect(rootAttrs["gen_ai.request.model"]).toBeUndefined();
+    expect(rootAttrs["glassray.customer"]).toBeUndefined();
+    // …so the real convention value (resource level) is untouched.
+    expect(resourceAttrs(body)["glassray.customer"]).toBe("real-co");
+    expect(rootAttrs.keep).toBe("yes");
+    expect(warnings.some((w) => w.includes("glassray.customer"))).toBe(true);
+    expect(warnings.some((w) => w.includes("gen_ai.request.model"))).toBe(true);
+  });
+
+  it("skips non-scalar values (objects / arrays / null)", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], {
+        // Cast through unknown: the public type is scalar-only, but a JS caller
+        // can still pass junk — it must be dropped, not serialized.
+        attributes: { good: "v", bad: { nested: 1 }, arr: [1, 2], nil: null } as unknown as Record<
+          string,
+          string | number | boolean
+        >,
+      }),
+      cfg(),
+      noWarn,
+    );
+    const attrs = rootSpanAttrs(body);
+    expect(attrs.good).toBe("v");
+    expect(attrs.bad).toBeUndefined();
+    expect(attrs.arr).toBeUndefined();
+    expect(attrs.nil).toBeUndefined();
+  });
+
+  it("adds no attributes when none are set (clean baseline)", () => {
+    const body = serializeTrace(trace([span({ isRoot: true, kind: "agent" })]), cfg(), noWarn);
+    const attrs = { ...resourceAttrs(body), ...rootSpanAttrs(body) };
+    // Every emitted key is a reserved/convention one — no stray custom attr leaks.
+    for (const key of Object.keys(attrs)) {
+      const reserved =
+        key.startsWith("gen_ai.") ||
+        key.startsWith("glassray.") ||
+        key === "service.name" ||
+        key === "session.id";
+      expect(reserved).toBe(true);
+    }
   });
 });
