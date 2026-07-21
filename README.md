@@ -1,15 +1,38 @@
-![Glassray](https://glassray.ai/docs/images/glassray_cover.jpeg)
+<div align="center">
 
-# @glassray/tracing
+<img src="https://glassray.ai/docs/images/glassray_cover.jpeg" alt="Glassray Tracing" width="640" />
 
-[![npm](https://img.shields.io/npm/v/@glassray/tracing.svg)](https://www.npmjs.com/package/@glassray/tracing)
-[![CI](https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml/badge.svg)](https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml)
-[![Socket](https://socket.dev/api/badge/npm/package/@glassray/tracing)](https://socket.dev/npm/package/@glassray/tracing)
-[![install size](https://packagephobia.com/badge?p=@glassray/tracing)](https://packagephobia.com/result?p=@glassray/tracing)
+<p><strong>Zero-dependency tracing for AI agents.</strong><br/>
+Wrap your agent's entrypoint and every run lands in Glassray as a full trace — LLM calls, tool calls, inputs/outputs, timing, nesting, tokens, errors.</p>
 
-Zero-dependency tracing for AI agents. Wrap your agent's entrypoint and every run lands
-in [Glassray](https://glassray.ai) as a full trace — LLM calls, tool calls,
-inputs/outputs, timing, nesting, tokens, errors.
+<p>
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#reliability">Reliability</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="https://glassray.ai/docs/sdk-quickstart">Docs</a>
+</p>
+
+<p>
+  <a href="https://www.npmjs.com/package/@glassray/tracing"><img src="https://img.shields.io/npm/v/@glassray/tracing.svg" alt="npm version" /></a>
+  <a href="https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml"><img src="https://github.com/glassray/glassray-tracing-js/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://socket.dev/npm/package/@glassray/tracing"><img src="https://socket.dev/api/badge/npm/package/@glassray/tracing" alt="Socket" /></a>
+  <a href="https://packagephobia.com/result?p=@glassray/tracing"><img src="https://packagephobia.com/badge?p=@glassray/tracing" alt="install size" /></a>
+  <img src="https://img.shields.io/badge/dependencies-0-06b6d4" alt="zero dependencies" />
+</p>
+
+</div>
+
+<!--
+  Demo: this is where a recorded GIF belongs — one wrapped function turning into a full
+  trace, spans lighting up (LLM calls, tool calls, timing, tokens). Record one and drop it
+  in, centered, e.g.:
+  <p align="center"><img src="https://glassray.ai/docs/images/sdk-demo.gif" width="760" /></p>
+-->
+
+No OpenTelemetry setup, no config file. Wrap your agent, run it, and the trace appears in the
+dashboard with every step — then Glassray starts classifying it into flows and scanning for
+deviations.
 
 ## Quickstart
 
@@ -47,11 +70,15 @@ const result = await glassray.trace("handle-ticket", { customer: "acme-corp" }, 
 });
 ```
 
-**5. Run it** — the trace appears in the dashboard with every step, and Glassray starts
-classifying it into flows and scanning for deviations.
+**5. Run it** — the trace appears in the dashboard with every step. That's it — no
+OpenTelemetry setup, no config file. Full docs: **[glassray.ai/docs](https://glassray.ai/docs/sdk-quickstart)**.
 
-That's it — no OpenTelemetry setup, no config file. Full docs:
-**[glassray.ai/docs](https://glassray.ai/docs/sdk-quickstart)**.
+## Why this SDK
+
+- **Zero runtime dependencies** — Node builtins and the global `fetch` only. Published unminified with sourcemaps, so the code on npm is the code you read.
+- **Write-only key** — the `sk_…` key carries `traces:write`; code holding it cannot read any data back.
+- **Fail-open, always** — every public method is internally guarded. An SDK bug or a Glassray outage costs telemetry at worst, never a blocked or crashed agent.
+- **Privacy in layers** — hide switches → scrub-by-default → your `redact()` hook (fail-closed) → per-call opt-out.
 
 ## Configuration
 
@@ -68,23 +95,20 @@ throws — the SDK warns and disables itself (fail-open extends to misconfigurat
 | `hideOutputs`  | `GLASSRAY_HIDE_OUTPUTS` | `false`                   | Same, for output content.                                                                                                                             |
 | `scrubbing`    | —                       | `true`                    | Scrub secret-shaped keys (`password`, `api_key`, `token`, …) inside captured I/O.                                                                     |
 | `redact`       | —                       | —                         | `(key, value) => value` hook over content attributes. Fail-closed: if it throws, the value is withheld.                                               |
-| `agent`        | —                       | —                         | Default metadata on every trace (see below).                                                                                                          |
-| `environment`  | —                       | —                         | **Deprecated, ignored since 0.1.3.** Still accepted so existing code compiles, but setting it warns once and has no effect — the ingest key selects the project. |
-| `customer`     | —                       | —                         | Default metadata; usually set per trace instead.                                                                                                      |
-| `attributes`   | —                       | —                         | Custom attributes (per-process defaults) attached to every trace, e.g. `{ environment: "production", region: "eu" }`. Filterable in Glassray. Reserved (`glassray.*` / `gen_ai.*`) keys are dropped. See below. |
+| `agent`        | —                       | —                         | Default metadata on every trace.                                                                                                                       |
+| `attributes`   | —                       | —                         | Custom, filterable attributes attached to every trace, e.g. `{ environment: "production", region: "eu" }`. Reserved (`glassray.*` / `gen_ai.*`) keys are dropped. |
 | `onWarn`       | —                       | console                   | Receives the SDK's rate-limited warnings instead of the console.                                                                                      |
 | —              | `GLASSRAY_DEBUG`        | `false`                   | Verbose diagnostics (queue, transport, drops).                                                                                                        |
 
-Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`) goes in
-the second argument of `glassray.trace(name, meta, fn)` and overrides the constructor
-defaults. It lands in Glassray as filterable trace tags. (`environment` is still accepted
-here for compile compatibility but is ignored since 0.1.3 — the ingest key selects the project.)
+Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`, `attributes`) goes in the second
+argument of `glassray.trace(name, meta, fn)` and overrides the constructor defaults. It lands in
+Glassray as filterable trace tags.
 
 ### Custom attributes
 
-Beyond `customer` / `agent` / `flow`, attach **any** custom attributes and filter your
-traces by them in the dashboard — e.g. by `merchantId`, `branch`, or `region`. Set
-per-process defaults on the constructor and override (or add) per trace in `meta.attributes`:
+Beyond `customer` / `agent` / `flow`, attach **any** custom attributes and filter your traces by
+them in the dashboard — e.g. by `merchantId`, `branch`, or `region`. Set per-process defaults on
+the constructor and override (or add) per trace in `meta.attributes`:
 
 ```ts
 const glassray = new Glassray({
@@ -99,17 +123,15 @@ await glassray.trace(
 );
 ```
 
-Values are scalar (string / number / boolean). A per-trace key overrides a constructor
-default of the same name. Keys under a reserved namespace (`glassray.*`, `gen_ai.*`, and
-the OTel infra prefixes like `service.*` / `session.*`) are dropped with a warning so a
-custom attribute can never shadow a first-class field. High-cardinality id-shaped values
-(UUIDs, hashes, long ids) are kept on the wire but not surfaced as filter options in the
-dashboard.
+Values are scalar (string / number / boolean). A per-trace key overrides a constructor default of
+the same name. Keys under a reserved namespace (`glassray.*`, `gen_ai.*`, and OTel infra prefixes
+like `service.*` / `session.*`) are dropped with a warning. High-cardinality id-shaped values
+(UUIDs, hashes, long ids) are kept on the wire but not surfaced as filter options.
 
 ## Serverless
 
-A trace is POSTed once, when its root settles (success or throw), from a queue that
-never holds your process open. So:
+A trace is POSTed once, when its root settles (success or throw), from a queue that never holds
+your process open. So:
 
 | Runtime                          | What you need                                                                            |
 | -------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -140,8 +162,7 @@ documented because they're the trust signal:
 - Bounded queue: **100 traces / 20 MiB**, drop-oldest with a one-time warning.
 - **10 s** request timeout; gzip at ≥ 8 KiB; `429` honors `Retry-After` (at most **3**
   requeues per trace, then dropped); `503`/network errors retried at most **2×** with
-  jittered backoff; other 4xx dropped immediately; `401`/`403` warn once and mute the
-  sender.
+  jittered backoff; other 4xx dropped immediately; `401`/`403` warn once and mute the sender.
 - Per-field cap **32 KiB** (truncated with an explicit marker); whole-trace soft cap
   **4 MiB** — structure, timing, and tokens always survive truncation.
 - No timer or socket holds the process open (everything is `unref`'d).
@@ -149,8 +170,7 @@ documented because they're the trust signal:
 
 ## Trust
 
-- The `sk_…` key is **write-only** (`traces:write`) — code holding it cannot read any
-  data back.
+- The `sk_…` key is **write-only** (`traces:write`) — code holding it cannot read any data back.
 - **Zero runtime dependencies** — Node builtins and the global `fetch` only.
 - **Zero phone-home** beyond the traces themselves.
 - Published unminified with sourcemaps — the code on npm is the code you read.
