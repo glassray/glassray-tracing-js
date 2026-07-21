@@ -1,9 +1,6 @@
 <div align="center">
 
-<img src="https://glassray.ai/docs/images/glassray_cover.jpeg" alt="Glassray Tracing" width="640" />
-
-<p><strong>Zero-dependency tracing for AI agents.</strong><br/>
-Wrap your agent's entrypoint and every run lands in Glassray as a full trace — LLM calls, tool calls, inputs/outputs, timing, nesting, tokens, errors.</p>
+<img src=".github/assets/hero.png" alt="glassray tracing — zero-dependency tracing for AI agents" width="820" />
 
 <p>
   <a href="#quickstart">Quickstart</a> ·
