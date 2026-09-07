@@ -6,9 +6,11 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   MAX_CONTENT_BYTES,
   MAX_TRACE_BYTES,
+  SDK_VERSION,
   serializeTrace,
   type SerializeConfig,
 } from "../src/serialize.js";
@@ -18,6 +20,7 @@ import type { SettledTrace, SpanRecord } from "../src/trace.js";
 const cfg = (over: Partial<SerializeConfig> = {}): SerializeConfig => ({
   agent: undefined,
   customer: undefined,
+  version: undefined,
   attributes: undefined,
   hideInputs: false,
   hideOutputs: false,
@@ -42,7 +45,9 @@ const span = (over: Partial<SpanRecord>): SpanRecord => ({
   usage: undefined,
   model: undefined,
   provider: undefined,
+  response: undefined,
   errorMessage: undefined,
+  errorType: undefined,
   autoClosed: false,
   ...over,
 });
@@ -54,6 +59,8 @@ const trace = (spans: SpanRecord[], over: Partial<SettledTrace> = {}): SettledTr
   sessionId: undefined,
   customer: undefined,
   flow: undefined,
+  userId: undefined,
+  depth: undefined,
   environment: undefined,
   attributes: undefined,
   spans,
@@ -397,5 +404,113 @@ describe("custom attributes (APP-14941)", () => {
         key === "session.id";
       expect(reserved).toBe(true);
     }
+  });
+});
+
+/** Every attribute of the first span whose name matches, as a key → scalar map. */
+const spanAttrs = (body: string, name: string): Record<string, unknown> => {
+  const doc = JSON.parse(body) as {
+    resourceSpans: {
+      scopeSpans: { spans: { name: string; attributes: { key: string; value: Record<string, unknown> }[] }[] }[];
+    }[];
+  };
+  const s = doc.resourceSpans.flatMap((rs) => rs.scopeSpans.flatMap((ss) => ss.spans)).find((x) => x.name === name);
+  return Object.fromEntries((s?.attributes ?? []).map((a) => [a.key, Object.values(a.value)[0]]));
+};
+
+/** Resource attributes as a key → scalar map. */
+const resourceAttrs = (body: string): Record<string, unknown> => {
+  const doc = JSON.parse(body) as {
+    resourceSpans: { resource: { attributes: { key: string; value: Record<string, unknown> }[] } }[];
+  };
+  return Object.fromEntries((doc.resourceSpans[0]?.resource.attributes ?? []).map((a) => [a.key, Object.values(a.value)[0]]));
+};
+
+describe("usage buckets + response metadata (cost-at-ingestion contract)", () => {
+  it("emits Anthropic-convention cache keys for exclusive usage and the OpenAI key for inclusive", () => {
+    const exclusive = serializeTrace(
+      trace([span({ isRoot: true, kind: "llm", name: "chat", usage: { inputTokens: 200, outputTokens: 50, cacheReadTokens: 800, cacheWriteTokens: 100, convention: "exclusive" } })]),
+      cfg(),
+      noWarn,
+    );
+    const a = spanAttrs(exclusive, "chat");
+    expect(a["gen_ai.usage.cache_read_input_tokens"]).toBe("800");
+    expect(a["gen_ai.usage.cache_creation_input_tokens"]).toBe("100");
+    expect(a["gen_ai.usage.cached_input_tokens"]).toBeUndefined();
+
+    const inclusive = serializeTrace(
+      trace([span({ isRoot: true, kind: "llm", name: "chat", usage: { inputTokens: 1000, outputTokens: 60, cacheReadTokens: 800, reasoningTokens: 40, convention: "inclusive" } })]),
+      cfg(),
+      noWarn,
+    );
+    const b = spanAttrs(inclusive, "chat");
+    expect(b["gen_ai.usage.cached_input_tokens"]).toBe("800");
+    expect(b["gen_ai.usage.cache_read_input_tokens"]).toBeUndefined();
+    expect(b["gen_ai.usage.reasoning_tokens"]).toBe("40");
+  });
+
+  it("keeps the inclusive convention discoverable on a cache-WRITE-only span", () => {
+    // A cache-priming first turn reports a write and no read. The convention
+    // rides the cache-READ key spelling, so the read bucket is emitted as 0
+    // under the inclusive key — otherwise ingest reads the lone Anthropic
+    // write key as "exclusive" and never subtracts the cache from fresh input.
+    const body = serializeTrace(
+      trace([
+        span({
+          isRoot: true,
+          kind: "llm",
+          name: "chat",
+          usage: { inputTokens: 10_000, outputTokens: 50, cacheWriteTokens: 8_000, convention: "inclusive" },
+        }),
+      ]),
+      cfg(),
+      noWarn,
+    );
+    const a = spanAttrs(body, "chat");
+    expect(a["gen_ai.usage.cached_input_tokens"]).toBe("0");
+    expect(a["gen_ai.usage.cache_creation_input_tokens"]).toBe("8000");
+    expect(a["gen_ai.usage.cache_read_input_tokens"]).toBeUndefined();
+  });
+
+  it("emits response metadata, request parameters and system instructions on llm spans", () => {
+    const body = serializeTrace(
+      trace([
+        span({
+          isRoot: true,
+          kind: "llm",
+          name: "chat",
+          model: "claude-sonnet-4-6",
+          provider: "anthropic",
+          input: { model: "claude-sonnet-4-6", system: "be terse", temperature: 0.2, max_tokens: 512, messages: [{ role: "user", content: "hi" }] },
+          hasInput: true,
+          response: { model: "claude-sonnet-4-6-20260212", id: "msg_01", finishReason: "end_turn" },
+        }),
+      ]),
+      cfg(),
+      noWarn,
+    );
+    const a = spanAttrs(body, "chat");
+    expect(a["gen_ai.response.model"]).toBe("claude-sonnet-4-6-20260212");
+    expect(a["gen_ai.response.id"]).toBe("msg_01");
+    expect(a["gen_ai.response.finish_reason"]).toBe("end_turn");
+    expect(a["gen_ai.request.temperature"]).toBe(0.2);
+    expect(a["gen_ai.request.max_tokens"]).toBe("512");
+    expect(a["gen_ai.system_instructions"]).toBe("be terse");
+  });
+
+  it("emits user.id on the root, service.version on the resource, and error.type beside error.message", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent", name: "run", errorMessage: "boom", errorType: "TypeError" })], { userId: "u-42" }),
+      cfg({ agent: "bot", version: "1.4.0" }),
+      noWarn,
+    );
+    expect(spanAttrs(body, "run")["user.id"]).toBe("u-42");
+    expect(spanAttrs(body, "run")["error.type"]).toBe("TypeError");
+    expect(resourceAttrs(body)["service.version"]).toBe("1.4.0");
+  });
+
+  it("stamps the instrumentation scope with the package version", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(SDK_VERSION).toBe(pkg.version);
   });
 });

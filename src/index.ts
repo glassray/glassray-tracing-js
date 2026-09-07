@@ -12,8 +12,10 @@ export {
   SpanHandle,
   TraceHandle,
   type LlmOptions,
+  type RootSpanOptions,
   type SpanOptions,
   type TraceMeta,
 } from "./trace.js";
-export type { Usage } from "./capture.js";
+export { currentSpan } from "./context.js";
+export type { RequestParams, ResponseMeta, Usage, UsageConvention } from "./capture.js";
 export type { GlassrayStats } from "./transport.js";

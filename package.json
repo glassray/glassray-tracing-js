@@ -1,6 +1,6 @@
 {
   "name": "@glassray/tracing",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "Zero-dependency tracing SDK that sends your agent runs to Glassray",
   "license": "MIT",
   "type": "module",
@@ -14,7 +14,11 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
   "publishConfig": {
     "access": "public",
@@ -45,6 +49,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "tsup",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

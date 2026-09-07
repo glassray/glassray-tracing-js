@@ -13,6 +13,7 @@ import {
   inertTraceHandle,
   startTraceRecording,
   TraceHandle,
+  type RootSpanOptions,
   type SettledTrace,
   type TraceMeta,
 } from "./trace.js";
@@ -67,7 +68,7 @@ export class Glassray {
     const fn = typeof metaOrFn === "function" ? metaOrFn : (maybeFn as (t: TraceHandle) => T);
     let handle: TraceHandle;
     try {
-      handle = this.begin(name, meta ?? {}, "agent", undefined);
+      handle = this.begin(name, meta ?? {}, { kind: "agent" }, undefined);
     } catch (err) {
       this.warnLog("client.trace", `failed to start trace "${name}": ${String(err)}`);
       handle = inertTraceHandle();
@@ -83,7 +84,7 @@ export class Glassray {
       let handle: TraceHandle;
       try {
         const input = args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
-        handle = this.begin(name, {}, kind, args.length > 0 ? { value: input } : undefined);
+        handle = this.begin(name, {}, { kind }, args.length > 0 ? { value: input } : undefined);
       } catch (err) {
         this.warnLog("client.wrap", `failed to start trace "${name}": ${String(err)}`);
         handle = inertTraceHandle();
@@ -92,10 +93,14 @@ export class Glassray {
     };
   }
 
-  /** Mode 3 — manual lifecycle: returns a live handle; call `t.end(...)` to settle and flush. */
-  startTrace(name: string, meta?: TraceMeta): TraceHandle {
+  /**
+   * Mode 3 — manual lifecycle: returns a live handle; call `t.end(...)` to
+   * settle and flush. `root` picks the root span's kind (default `agent`) —
+   * pass `{ kind: "llm", model }` when the whole trace IS one model call.
+   */
+  startTrace(name: string, meta?: TraceMeta, root?: RootSpanOptions): TraceHandle {
     try {
-      return this.begin(name, meta ?? {}, "agent", undefined);
+      return this.begin(name, meta ?? {}, root ?? { kind: "agent" }, undefined);
     } catch (err) {
       this.warnLog("client.startTrace", `failed to start trace "${name}": ${String(err)}`);
       return inertTraceHandle();
@@ -137,7 +142,7 @@ export class Glassray {
   private begin(
     name: string,
     meta: TraceMeta,
-    rootKind: GlassraySpanKind,
+    root: RootSpanOptions,
     rootInput: { value: unknown } | undefined,
   ): TraceHandle {
     if (!this.config.enabled) return inertTraceHandle();
@@ -150,7 +155,7 @@ export class Glassray {
       meta,
       warn: this.warnLog,
       onSettle: this.handleSettle,
-      rootKind,
+      root,
       rootInput,
     });
   }

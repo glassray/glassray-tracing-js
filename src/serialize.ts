@@ -7,7 +7,7 @@
  */
 
 import { TRACE_ATTR, TRACE_OPERATION } from "./attributes.js";
-import { toInputMessages, toOutputMessages } from "./capture.js";
+import { extractRequestParams, toInputMessages, toOutputMessages } from "./capture.js";
 import { applyRedact, scrubValue, HIDDEN_PLACEHOLDER } from "./scrub.js";
 import type { SettledTrace, SpanRecord } from "./trace.js";
 import type { Warner } from "./warn.js";
@@ -15,8 +15,8 @@ import type { Warner } from "./warn.js";
 /** Instrumentation-scope name stamped on every export. */
 export const SCOPE_NAME = "@glassray/tracing";
 
-/** SDK version stamped on the instrumentation scope (kept in step with package.json). */
-export const SDK_VERSION = "0.1.0";
+/** SDK version stamped on the instrumentation scope — pinned to package.json by a test. */
+export const SDK_VERSION = "0.1.7";
 
 /** Per-content-attribute cap: 32 KiB, truncate-don't-drop. */
 export const MAX_CONTENT_BYTES = 32 * 1024;
@@ -34,6 +34,8 @@ const MAX_DEPTH = 8;
 export type SerializeConfig = {
   agent: string | undefined;
   customer: string | undefined;
+  /** Release / build version → `service.version` resource attribute. */
+  version: string | undefined;
   /** Resource-level custom attribute defaults (per-process), emitted verbatim (APP-14941). */
   attributes: Record<string, string | number | boolean> | undefined;
   hideInputs: boolean;
@@ -56,6 +58,7 @@ const RESERVED_ATTRIBUTE_PREFIXES = [
   "telemetry.",
   "service.",
   "session.",
+  "user.",
   "input.",
   "output.",
   "error.",
@@ -270,10 +273,6 @@ const buildSpanAttrs = (
       break;
     case "llm":
       put(TRACE_ATTR.GEN_AI_OPERATION_NAME, TRACE_OPERATION.CHAT);
-      // Both the current spelling and the deprecated alias, one release.
-      put(TRACE_ATTR.GEN_AI_PROVIDER_NAME, span.provider);
-      put(TRACE_ATTR.GEN_AI_SYSTEM, span.provider);
-      put(TRACE_ATTR.GEN_AI_REQUEST_MODEL, span.model);
       break;
     case "tool":
       put(TRACE_ATTR.GEN_AI_OPERATION_NAME, TRACE_OPERATION.EXECUTE_TOOL);
@@ -288,11 +287,60 @@ const buildSpanAttrs = (
       break;
   }
 
+  // Model + provider ride ANY span that carries them, not only `llm` ones: an
+  // agent/workflow span that reports its loop's aggregate usage is priced by
+  // ingest from the same attributes (a usage-bearing span with no usage-bearing
+  // descendants is a costing leaf, whatever its kind).
+  put(TRACE_ATTR.GEN_AI_REQUEST_MODEL, span.model);
+  // Both the current provider spelling and the deprecated alias, one release.
+  put(TRACE_ATTR.GEN_AI_PROVIDER_NAME, span.provider);
+  put(TRACE_ATTR.GEN_AI_SYSTEM, span.provider);
+
   if (span.usage?.inputTokens !== undefined) {
     put(TRACE_ATTR.GEN_AI_USAGE_INPUT_TOKENS, span.usage.inputTokens);
   }
   if (span.usage?.outputTokens !== undefined) {
     put(TRACE_ATTR.GEN_AI_USAGE_OUTPUT_TOKENS, span.usage.outputTokens);
+  }
+  // Cache buckets in the spelling that ENCODES the provider's convention, so
+  // ingest prices them without guessing: the Anthropic keys mean "beside
+  // input_tokens" (exclusive), the OpenAI key means "inside" (inclusive).
+  //
+  // Only the cache-READ key carries that signal — cache WRITE has a single
+  // spelling — so a span with a write and no read would be read back as
+  // exclusive and its fresh input never reduced (a cache-priming first turn,
+  // over-billed by the whole write). Emit the read bucket, even as 0, whenever
+  // ANY cache bucket is present, so the convention always rides the wire.
+  const cacheRead = span.usage?.cacheReadTokens;
+  const cacheWrite = span.usage?.cacheWriteTokens;
+  if (cacheRead !== undefined || cacheWrite !== undefined) {
+    put(
+      span.usage?.convention === "inclusive"
+        ? TRACE_ATTR.GEN_AI_USAGE_CACHED_INPUT_TOKENS
+        : TRACE_ATTR.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS,
+      cacheRead ?? 0,
+    );
+  }
+  if (cacheWrite !== undefined) {
+    put(TRACE_ATTR.GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, cacheWrite);
+  }
+  if (span.usage?.reasoningTokens !== undefined) {
+    put(TRACE_ATTR.GEN_AI_USAGE_REASONING_TOKENS, span.usage.reasoningTokens);
+  }
+  // Response metadata (llm spans): the model that served, the provider's id,
+  // and the finish reason ingest also reads as an error signal.
+  if (span.kind === "llm") {
+    put(TRACE_ATTR.GEN_AI_RESPONSE_MODEL, span.response?.model);
+    put(TRACE_ATTR.GEN_AI_RESPONSE_ID, span.response?.id);
+    put(TRACE_ATTR.GEN_AI_RESPONSE_FINISH_REASON, span.response?.finishReason);
+    // Sampling parameters off a raw request object, when that is the input.
+    const params = span.hasInput ? extractRequestParams(span.input) : undefined;
+    put(TRACE_ATTR.GEN_AI_REQUEST_TEMPERATURE, params?.temperature);
+    put(TRACE_ATTR.GEN_AI_REQUEST_MAX_TOKENS, params?.maxTokens);
+    put(TRACE_ATTR.GEN_AI_REQUEST_TOP_P, params?.topP);
+    if (params?.systemInstructions !== undefined) {
+      pushContent(attrs, refs, TRACE_ATTR.GEN_AI_SYSTEM_INSTRUCTIONS, params.systemInstructions, "input", cfg);
+    }
   }
   // Only emit a finite, non-negative cost: an unvalidated `setUsage({ cost })`
   // or a bad gateway value (NaN → serializes as null, or a negative) must not
@@ -309,6 +357,8 @@ const buildSpanAttrs = (
   if (span.isRoot) {
     put(TRACE_ATTR.GLASSRAY_CUSTOMER, trace.customer);
     put(TRACE_ATTR.GLASSRAY_FLOW, trace.flow);
+    put(TRACE_ATTR.USER_ID, trace.userId);
+    put(TRACE_ATTR.GLASSRAY_DEPTH, trace.depth);
     // Per-trace custom attributes (APP-14941) also ride the root span, so they
     // override any resource-level default of the same key at ingest.
     emitCustomAttributes(put, trace.attributes, warn);
@@ -334,6 +384,7 @@ const buildSpanAttrs = (
 
   if (span.errorMessage !== undefined) {
     put(TRACE_ATTR.ERROR_MESSAGE, truncateContent(span.errorMessage, MAX_CONTENT_BYTES));
+    put(TRACE_ATTR.ERROR_TYPE, span.errorType);
   }
   if (span.autoClosed) put(TRACE_ATTR.GLASSRAY_SPAN_AUTO_CLOSED, true);
 
@@ -356,6 +407,7 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
     if (v !== undefined) resourceAttrs.push({ key, value: attrValue(v) });
   };
   putResource("service.name", cfg.agent);
+  putResource(TRACE_ATTR.SERVICE_VERSION, cfg.version);
   putResource(TRACE_ATTR.GLASSRAY_AGENT, cfg.agent);
   putResource(TRACE_ATTR.GLASSRAY_CUSTOMER, cfg.customer);
   putResource(TRACE_ATTR.SESSION_ID, trace.sessionId);

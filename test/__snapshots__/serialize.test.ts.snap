@@ -36,7 +36,7 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
         {
           "scope": {
             "name": "@glassray/tracing",
-            "version": "0.1.0",
+            "version": "0.1.7",
           },
           "spans": [
             {
@@ -94,6 +94,12 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
                   },
                 },
                 {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "claude-opus-4-8",
+                  },
+                },
+                {
                   "key": "gen_ai.provider.name",
                   "value": {
                     "stringValue": "anthropic",
@@ -103,12 +109,6 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
                   "key": "gen_ai.system",
                   "value": {
                     "stringValue": "anthropic",
-                  },
-                },
-                {
-                  "key": "gen_ai.request.model",
-                  "value": {
-                    "stringValue": "claude-opus-4-8",
                   },
                 },
                 {

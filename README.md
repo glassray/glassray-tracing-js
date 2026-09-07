@@ -71,13 +71,17 @@ throws — the SDK warns and disables itself (fail-open extends to misconfigurat
 | `agent`        | —                       | —                         | Default metadata on every trace (see below).                                                                                                          |
 | `environment`  | —                       | —                         | **Deprecated, ignored since 0.1.3.** Still accepted so existing code compiles, but setting it warns once and has no effect — the ingest key selects the project. |
 | `customer`     | —                       | —                         | Default metadata; usually set per trace instead.                                                                                                      |
+| `version`      | —                       | —                         | Release / build version of your service (`service.version`) — compare cost and behaviour across releases.                                             |
 | `attributes`   | —                       | —                         | Custom attributes (per-process defaults) attached to every trace, e.g. `{ environment: "production", region: "eu" }`. Filterable in Glassray. Reserved (`glassray.*` / `gen_ai.*`) keys are dropped. See below. |
 | `onWarn`       | —                       | console                   | Receives the SDK's rate-limited warnings instead of the console.                                                                                      |
 | —              | `GLASSRAY_DEBUG`        | `false`                   | Verbose diagnostics (queue, transport, drops).                                                                                                        |
 
-Per-trace metadata (`customer`, `sessionId`, `flow`, `traceId`) goes in
+Per-trace metadata (`customer`, `userId`, `sessionId`, `flow`, `traceId`, `depth`) goes in
 the second argument of `glassray.trace(name, meta, fn)` and overrides the constructor
-defaults. It lands in Glassray as filterable trace tags. (`environment` is still accepted
+defaults. (`depth` is for platforms that trace their own evaluation of ingested traces —
+it lets a workspace cap trace-of-a-trace recursion; ordinary agents leave it unset.)
+`glassray.startTrace(name, meta, root)` additionally takes root-span options — pass
+`{ kind: "llm", model, provider }` when the whole trace is a single model call. It lands in Glassray as filterable trace tags. (`environment` is still accepted
 here for compile compatibility but is ignored since 0.1.3 — the ingest key selects the project.)
 
 ### Custom attributes

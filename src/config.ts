@@ -19,6 +19,8 @@ export type GlassrayOptions = {
   environment?: string;
   /** Customer identifier — resource-level metadata default (`glassray.customer`). */
   customer?: string;
+  /** Release / build version of your service (emitted as `service.version`) — compare cost and behaviour across releases. */
+  version?: string;
   /**
    * Arbitrary custom attributes attached to every trace as **resource-level
    * defaults** (per-process). Emitted verbatim as OTLP resource attributes, so
@@ -64,6 +66,8 @@ export type ResolvedConfig = {
   endpoint: string;
   agent: string | undefined;
   customer: string | undefined;
+  /** Release / build version, emitted as `service.version`. */
+  version: string | undefined;
   /** Resource-level custom attribute defaults (per-process), emitted verbatim. */
   attributes: Record<string, string | number | boolean> | undefined;
   redact: ((attrKey: string, value: unknown) => unknown) | undefined;
@@ -176,6 +180,7 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       endpoint,
       agent: options.agent,
       customer: options.customer,
+      version: options.version,
       attributes: options.attributes,
       redact: options.redact,
       sampleRate,
@@ -194,6 +199,7 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       endpoint: resolveEndpoint(DEFAULT_ENDPOINT_BASE),
       agent: undefined,
       customer: undefined,
+      version: undefined,
       attributes: undefined,
       redact: undefined,
       sampleRate: 1,
