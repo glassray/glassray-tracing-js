@@ -27,5 +27,5 @@ jobs:
       - run: npm audit --audit-level=critical
       - run: npx tsc --noEmit
       - run: npx eslint .
-      - run: npx vitest run
       - run: npx tsup
+      - run: npx vitest run

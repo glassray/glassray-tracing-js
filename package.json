@@ -52,6 +52,7 @@
     "prepare": "tsup",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "pretest": "tsup",
     "test": "vitest run",
     "release": "release-it",
     "release:dry": "release-it --dry-run"

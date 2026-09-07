@@ -7,6 +7,28 @@ import { describe, expect, it } from "vitest";
 import { extractRequestParams, extractResponseMeta, extractUsage } from "../src/capture.js";
 
 describe("extractUsage", () => {
+  it("reads the OpenAI Responses API shape as inclusive with its detail buckets", () => {
+    // Responses reuses Anthropic's top-level names but counts the cache INSIDE
+    // input_tokens; the detail objects are what tell the two apart.
+    expect(
+      extractUsage({
+        usage: {
+          input_tokens: 1200,
+          output_tokens: 300,
+          input_tokens_details: { cached_tokens: 800 },
+          output_tokens_details: { reasoning_tokens: 120 },
+        },
+      }),
+    ).toEqual({
+      inputTokens: 1200,
+      outputTokens: 300,
+      cost: undefined,
+      cacheReadTokens: 800,
+      reasoningTokens: 120,
+      convention: "inclusive",
+    });
+  });
+
   it("pulls Anthropic-style tokens", () => {
     expect(extractUsage({ usage: { input_tokens: 12, output_tokens: 7 } })).toEqual({
       inputTokens: 12,
@@ -100,5 +122,16 @@ describe("extractResponseMeta / extractRequestParams", () => {
       systemInstructions: "be terse",
     });
     expect(extractRequestParams([{ role: "user", content: "hi" }])).toBeUndefined();
+  });
+});
+
+describe("extractRequestParams on a wrapped argument list", () => {
+  it("reads the request object out of `[request, options]` (what wrap() records)", () => {
+    expect(
+      extractRequestParams([
+        { model: "claude-opus-4-8", temperature: 0.3, max_tokens: 256, system: "be terse", messages: [] },
+        { signal: undefined },
+      ]),
+    ).toEqual({ temperature: 0.3, maxTokens: 256, topP: undefined, systemInstructions: "be terse" });
   });
 });

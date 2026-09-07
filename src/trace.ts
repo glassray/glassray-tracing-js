@@ -8,7 +8,18 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import type { GlassraySpanKind } from "./attributes.js";
-import { extractResponseMeta, extractUsage, type ResponseMeta, type Usage } from "./capture.js";
+import {
+  extractResponseMeta,
+  extractUsage,
+  type ResponseMeta,
+  type Usage,
+  type UsageConvention,
+} from "./capture.js";
+
+/** Structural view of `Usage` for the runtime convention check (the public type is a union). */
+type UsageCounts = { inputTokens?: number; outputTokens?: number; cost?: number };
+/** The optional buckets, viewed structurally for the runtime convention check. */
+type UsageBuckets = { cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number };
 import { currentSpan, runWithSpan } from "./context.js";
 import type { Warner } from "./warn.js";
 
@@ -152,6 +163,8 @@ export class TraceBuffer {
   readonly spans: SpanRecord[] = [];
   settled = false;
   readonly warn: Warner;
+  /** Validated `meta.depth` (see the constructor). */
+  private readonly depth: number | undefined;
   private readonly meta: TraceMeta;
   private readonly name: string;
   private readonly onSettle: (trace: SettledTrace) => void;
@@ -175,6 +188,14 @@ export class TraceBuffer {
         "the `environment` trace metadata is deprecated and ignored since 0.1.3 — the ingest key selects the project",
       );
     }
+    // `depth` is a recursion level: a finite, non-negative integer or nothing.
+    // Anything else would serialise as a bogus level (or `null`) and defeat the
+    // cap it exists for, so it is dropped with a warning.
+    const depth = args.meta.depth;
+    if (depth !== undefined && !(Number.isInteger(depth) && depth >= 0)) {
+      this.warn("trace.depth", `invalid depth ${String(depth)} (need a non-negative integer) — omitted`);
+    }
+    this.depth = depth !== undefined && Number.isInteger(depth) && depth >= 0 ? depth : undefined;
     const requested = args.meta.traceId;
     if (requested !== undefined && !VALID_TRACE_ID.test(requested)) {
       this.warn(
@@ -245,7 +266,7 @@ export class TraceBuffer {
       customer: this.meta.customer,
       flow: this.meta.flow,
       userId: this.meta.userId,
-      depth: this.meta.depth,
+      depth: this.depth,
       environment: this.meta.environment,
       attributes: this.meta.attributes,
       spans: this.spans,
@@ -305,6 +326,18 @@ export class SpanHandle {
   setUsage(usage: Usage): void {
     try {
       if (!this.record) return;
+      // The type requires `convention` beside any bucket; a JS caller can still
+      // omit it, and the wrong guess mis-prices the call — say so once.
+      const u = usage as UsageCounts & UsageBuckets & { convention?: UsageConvention };
+      if (
+        u.convention === undefined &&
+        (u.cacheReadTokens !== undefined || u.cacheWriteTokens !== undefined || u.reasoningTokens !== undefined)
+      ) {
+        this.buffer?.warn(
+          "span.setUsage.convention",
+          "setUsage received cache/reasoning buckets without a `convention` — treated as exclusive (Anthropic-style); pass convention: \"inclusive\" if inputTokens contains the cached tokens",
+        );
+      }
       this.record.usage = usage;
     } catch (err) {
       this.buffer?.warn("span.setUsage", `setUsage failed: ${String(err)}`);
