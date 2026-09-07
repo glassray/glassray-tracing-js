@@ -53,6 +53,42 @@ classifying it into flows and scanning for deviations.
 That's it — no OpenTelemetry setup, no config file. Full docs:
 **[glassray.ai/docs](https://glassray.ai/docs/sdk-quickstart)**.
 
+## Usage & cost
+
+Return the provider's full response from `t.llm(...)` and the SDK reads the token usage
+off it — Anthropic (`usage.input_tokens` / `output_tokens` plus the cache buckets) and
+OpenAI (`usage.prompt_tokens` / `completion_tokens` plus cached and reasoning details)
+shapes are recognised, and a gateway `usage.cost` is picked up when present. Glassray then
+prices each bucket at the model's own rate, so pass the provider's **canonical model id**
+(`claude-opus-4-8`, `gpt-4o`, …); an internal alias won't match a price and is left blank,
+never `$0`.
+
+For anything else, set it yourself:
+
+```ts
+// Plain counts.
+s.setUsage({ inputTokens: 812, outputTokens: 240 });
+
+// With cache / reasoning buckets — say how your provider counted them:
+// "exclusive" when inputTokens already excludes the cache (Anthropic),
+// "inclusive" when it includes it (OpenAI).
+s.setUsage({
+  inputTokens: 1200,
+  outputTokens: 300,
+  cacheReadTokens: 800,
+  cacheWriteTokens: 400,
+  reasoningTokens: 120,
+  convention: "inclusive",
+});
+
+// You already know the exact figure (batch tier, custom alias, gateway cost).
+s.setUsage({ inputTokens: 1200, outputTokens: 300, cost: 0.0021 });
+```
+
+An explicit `cost` always wins over the estimate. Cache buckets and `convention` need
+**0.1.6+**; the convention is encoded in the attribute names on the wire, so Glassray
+never guesses it from the numbers.
+
 ## Configuration
 
 Precedence: constructor option > environment variable > default. Invalid config never
