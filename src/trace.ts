@@ -8,7 +8,18 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import type { GlassraySpanKind } from "./attributes.js";
-import { extractUsage, type Usage } from "./capture.js";
+import {
+  extractResponseMeta,
+  extractUsage,
+  type ResponseMeta,
+  type Usage,
+  type UsageConvention,
+} from "./capture.js";
+
+/** Structural view of `Usage` for the runtime convention check (the public type is a union). */
+type UsageCounts = { inputTokens?: number; outputTokens?: number; cost?: number };
+/** The optional buckets, viewed structurally for the runtime convention check. */
+type UsageBuckets = { cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number };
 import { currentSpan, runWithSpan } from "./context.js";
 import type { Warner } from "./warn.js";
 
@@ -19,8 +30,16 @@ export type TraceMeta = {
   customer?: string;
   sessionId?: string;
   flow?: string;
+  /** End-user id for this run (emitted as `user.id`) — the per-user cost / behaviour dimension, distinct from the per-customer one. */
+  userId?: string;
   /** 32-char hex trace id (e.g. from `createTraceId`); invalid values warn and fall back to random. */
   traceId?: string;
+  /**
+   * Recursion depth for a trace produced while evaluating another trace
+   * (emitted as `glassray.depth`). Only meaningful for platforms that trace
+   * their own evaluation of ingested traces; ordinary agents leave it unset.
+   */
+  depth?: number;
   environment?: string;
   /**
    * Arbitrary custom attributes for THIS trace, emitted verbatim as root-span
@@ -50,6 +69,9 @@ export type SpanOptions = {
 /** Options for `t.llm(...)` — span options minus `kind` (it is always `llm`). */
 export type LlmOptions = Omit<SpanOptions, "kind">;
 
+/** Root-span options for `glassray.startTrace(name, meta, root)`: the root's kind (default `agent`) plus model/provider for an `llm` root. */
+export type RootSpanOptions = Pick<SpanOptions, "kind" | "model" | "provider">;
+
 // ── Internal records ─────────────────────────────────────────────────────────
 
 /** One buffered span — everything the serializer needs to emit an OTLP span. */
@@ -68,7 +90,11 @@ export type SpanRecord = {
   usage: Usage | undefined;
   model: string | undefined;
   provider: string | undefined;
+  /** Provider response metadata captured off an `llm` span's return value (model served, response id, finish reason). */
+  response: ResponseMeta | undefined;
   errorMessage: string | undefined;
+  /** Error class name (`err.name`) captured beside the message. */
+  errorType: string | undefined;
   autoClosed: boolean;
 };
 
@@ -79,6 +105,9 @@ export type SettledTrace = {
   sessionId: string | undefined;
   customer: string | undefined;
   flow: string | undefined;
+  userId: string | undefined;
+  /** Recursion depth → `glassray.depth` on the root span (see `TraceMeta.depth`). */
+  depth: number | undefined;
   environment: string | undefined;
   /** Per-trace custom attributes → root-span attribute overrides (APP-14941). */
   attributes: Record<string, string | number | boolean> | undefined;
@@ -110,6 +139,10 @@ const VALID_TRACE_ID = /^[0-9a-f]{32}$/i;
 const isThenable = (v: unknown): v is PromiseLike<unknown> =>
   typeof v === "object" && v !== null && typeof (v as { then?: unknown }).then === "function";
 
+/** The thrown value's class name for `error.type` (`Error` subclasses only). */
+const errorType = (err: unknown): string | undefined =>
+  err instanceof Error && err.name ? err.name : undefined;
+
 /** Normalize a thrown value into the `error.message` attribute string. */
 const errorText = (err: unknown): string => {
   if (err instanceof Error) return err.message || err.name;
@@ -130,6 +163,8 @@ export class TraceBuffer {
   readonly spans: SpanRecord[] = [];
   settled = false;
   readonly warn: Warner;
+  /** Validated `meta.depth` (see the constructor). */
+  private readonly depth: number | undefined;
   private readonly meta: TraceMeta;
   private readonly name: string;
   private readonly onSettle: (trace: SettledTrace) => void;
@@ -153,6 +188,14 @@ export class TraceBuffer {
         "the `environment` trace metadata is deprecated and ignored since 0.1.3 — the ingest key selects the project",
       );
     }
+    // `depth` is a recursion level: a finite, non-negative integer or nothing.
+    // Anything else would serialise as a bogus level (or `null`) and defeat the
+    // cap it exists for, so it is dropped with a warning.
+    const depth = args.meta.depth;
+    if (depth !== undefined && !(Number.isInteger(depth) && depth >= 0)) {
+      this.warn("trace.depth", `invalid depth ${String(depth)} (need a non-negative integer) — omitted`);
+    }
+    this.depth = depth !== undefined && Number.isInteger(depth) && depth >= 0 ? depth : undefined;
     const requested = args.meta.traceId;
     if (requested !== undefined && !VALID_TRACE_ID.test(requested)) {
       this.warn(
@@ -185,7 +228,9 @@ export class TraceBuffer {
       usage: undefined,
       model: opts.model,
       provider: opts.provider,
+      response: undefined,
       errorMessage: undefined,
+      errorType: undefined,
       autoClosed: false,
     };
     // Explicit input always applies — captureInput gates automatic capture only.
@@ -220,6 +265,8 @@ export class TraceBuffer {
       sessionId: this.meta.sessionId,
       customer: this.meta.customer,
       flow: this.meta.flow,
+      userId: this.meta.userId,
+      depth: this.depth,
       environment: this.meta.environment,
       attributes: this.meta.attributes,
       spans: this.spans,
@@ -279,6 +326,18 @@ export class SpanHandle {
   setUsage(usage: Usage): void {
     try {
       if (!this.record) return;
+      // The type requires `convention` beside any bucket; a JS caller can still
+      // omit it, and the wrong guess mis-prices the call — say so once.
+      const u = usage as UsageCounts & UsageBuckets & { convention?: UsageConvention };
+      if (
+        u.convention === undefined &&
+        (u.cacheReadTokens !== undefined || u.cacheWriteTokens !== undefined || u.reasoningTokens !== undefined)
+      ) {
+        this.buffer?.warn(
+          "span.setUsage.convention",
+          "setUsage received cache/reasoning buckets without a `convention` — treated as exclusive (Anthropic-style); pass convention: \"inclusive\" if inputTokens contains the cached tokens",
+        );
+      }
       this.record.usage = usage;
     } catch (err) {
       this.buffer?.warn("span.setUsage", `setUsage failed: ${String(err)}`);
@@ -290,6 +349,7 @@ export class SpanHandle {
     try {
       if (!this.record) return;
       this.record.errorMessage = errorText(err);
+      this.record.errorType = errorType(err);
     } catch (e) {
       this.buffer?.warn("span.setError", `setError failed: ${String(e)}`);
     }
@@ -377,8 +437,10 @@ const executeInSpan = <T>(handle: SpanHandle, opts: SpanOptions, fn: () => T): T
         record.output = value;
         record.hasOutput = true;
       }
-      if (record.kind === "llm" && record.usage === undefined) {
-        record.usage = extractUsage(value);
+      if (record.kind === "llm") {
+        if (record.usage === undefined) record.usage = extractUsage(value);
+        // Response metadata rides the return value too — model served, id, finish reason.
+        if (record.response === undefined) record.response = extractResponseMeta(value);
       }
       handle.buffer.endSpan(record);
     } catch (err) {
@@ -452,12 +514,16 @@ export class TraceHandle extends SpanHandle {
    * the root span — and always pass the customer's outcome through untouched.
    */
   run<T>(fn: (t: TraceHandle) => T): T {
-    /** Success settle: root output from the return value unless explicitly set. */
+    /** Success settle: root output from the return value unless explicitly set; an `llm` root also captures usage/response like a child llm span. */
     const settleOk = (value: unknown): void => {
       try {
         if (this.record && !this.record.hasOutput && value !== undefined) {
           this.record.output = value;
           this.record.hasOutput = true;
+        }
+        if (this.record?.kind === "llm") {
+          if (this.record.usage === undefined) this.record.usage = extractUsage(value);
+          if (this.record.response === undefined) this.record.response = extractResponseMeta(value);
         }
         this.end();
       } catch {
@@ -517,7 +583,8 @@ export const startTraceRecording = (args: {
   meta: TraceMeta;
   warn: Warner;
   onSettle: (trace: SettledTrace) => void;
-  rootKind?: GlassraySpanKind;
+  /** Root span kind (default `agent`) and, for an `llm` root, its model/provider. */
+  root?: RootSpanOptions;
   rootInput?: { value: unknown };
 }): TraceHandle => {
   const buffer = new TraceBuffer({
@@ -526,7 +593,7 @@ export const startTraceRecording = (args: {
     warn: args.warn,
     onSettle: args.onSettle,
   });
-  const root = buffer.createSpan(args.name, { kind: args.rootKind ?? "agent" }, null);
+  const root = buffer.createSpan(args.name, { ...args.root, kind: args.root?.kind ?? "agent" }, null);
   if (root && args.rootInput) {
     root.input = args.rootInput.value;
     root.hasInput = true;

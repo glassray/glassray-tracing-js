@@ -17,6 +17,8 @@ const traceWithInput = (input: unknown): SettledTrace => ({
   sessionId: undefined,
   customer: undefined,
   flow: undefined,
+  userId: undefined,
+  depth: undefined,
   environment: undefined,
   attributes: undefined,
   spans: [
@@ -35,7 +37,9 @@ const traceWithInput = (input: unknown): SettledTrace => ({
       usage: undefined,
       model: undefined,
       provider: undefined,
+      response: undefined,
       errorMessage: undefined,
+      errorType: undefined,
       autoClosed: false,
     },
   ],
@@ -45,6 +49,7 @@ const traceWithInput = (input: unknown): SettledTrace => ({
 const cfg = (over: Partial<SerializeConfig> = {}): SerializeConfig => ({
   agent: undefined,
   customer: undefined,
+  version: undefined,
   attributes: undefined,
   hideInputs: false,
   hideOutputs: false,

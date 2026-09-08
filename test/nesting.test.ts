@@ -103,4 +103,53 @@ describe("context & nesting", () => {
     expect(attr(root, "glassray.customer")).toEqual({ stringValue: "acme" });
     expect(attr(toolA, "gen_ai.tool.name")).toEqual({ stringValue: "tool-a" });
   });
+  it("an llm-kind root carries model/provider/depth and explicit usage on the root span", async () => {
+    const { glassray, bodies } = clientWithSink();
+    const t = glassray.startTrace(
+      "judge",
+      { customer: "org_1", depth: 2 },
+      { kind: "llm", model: "claude-sonnet-4-6", provider: "anthropic" },
+    );
+    await t.run(async () => {
+      t.setUsage({ inputTokens: 1000, outputTokens: 50, cacheReadTokens: 400, convention: "inclusive" });
+      return { text: "ok" };
+    });
+    await glassray.flush();
+    const root = spansOf(bodies[0]!).find((s) => !s.parentSpanId)!;
+    const attr = (key: string) => root.attributes.find((a) => a.key === key)?.value;
+    expect(attr("gen_ai.operation.name")).toEqual({ stringValue: "chat" });
+    expect(attr("gen_ai.request.model")).toEqual({ stringValue: "claude-sonnet-4-6" });
+    expect(attr("gen_ai.provider.name")).toEqual({ stringValue: "anthropic" });
+    expect(attr("glassray.customer")).toEqual({ stringValue: "org_1" });
+    expect(attr("glassray.depth")).toEqual({ intValue: "2" });
+    expect(attr("gen_ai.usage.input_tokens")).toEqual({ intValue: "1000" });
+    // Inclusive convention → the OpenAI-style "inside input" cache key.
+    expect(attr("gen_ai.usage.cached_input_tokens")).toEqual({ intValue: "400" });
+  });
+
+  it("drops an invalid depth with a warning and warns on cache buckets without a convention", async () => {
+    const bodies: string[] = [];
+    const warnings: string[] = [];
+    const glassray = new Glassray({
+      apiKey: "sk_test",
+      endpoint: "http://localhost:9999",
+      agent: "test-agent",
+      fetch: (async (_url: unknown, init?: RequestInit) => {
+        bodies.push(String(init?.body));
+        return new Response(null, { status: 200 });
+      }) as unknown as typeof fetch,
+      onWarn: (m) => warnings.push(m),
+    });
+    const t = glassray.startTrace("run", { depth: -1 }, { kind: "llm", model: "m" });
+    await t.run(async () => {
+      // A JS caller can omit the convention the type demands — it must warn, not mis-price silently.
+      t.setUsage({ inputTokens: 100, outputTokens: 5, cacheReadTokens: 40 } as never);
+      return "ok";
+    });
+    await glassray.flush();
+    const root = spansOf(bodies[0]!).find((s) => !s.parentSpanId)!;
+    expect(root.attributes.find((a) => a.key === "glassray.depth")).toBeUndefined();
+    expect(warnings.some((w) => w.includes("invalid depth"))).toBe(true);
+    expect(warnings.some((w) => w.includes("without a `convention`"))).toBe(true);
+  });
 });
