@@ -5,6 +5,7 @@
  * extends to misconfiguration).
  */
 
+import { normalizeCustomer, type CustomerProfile, type CustomerRef } from "./customer.js";
 import type { Warner } from "./warn.js";
 
 /** Constructor options for `new Glassray(...)` — the full public config surface. */
@@ -17,8 +18,13 @@ export type GlassrayOptions = {
   agent?: string;
   /** @deprecated Ignored since 0.1.3 — the ingest key selects the project. Still accepted for compile compatibility; setting it warns once and no longer affects routing or emission. */
   environment?: string;
-  /** Customer identifier — resource-level metadata default (`glassray.customer`). */
-  customer?: string;
+  /**
+   * Customer — resource-level metadata default. A string is the identifier
+   * (`glassray.customer`); an object adds the display name / contact email /
+   * company domain that name it in Glassray's customer directory. Usually set
+   * per trace instead, since it varies per run.
+   */
+  customer?: string | CustomerRef;
   /** Release / build version of your service (emitted as `service.version`) — compare cost and behaviour across releases. */
   version?: string;
   /**
@@ -65,7 +71,10 @@ export type ResolvedConfig = {
   /** Full OTLP traces URL (endpoint already resolved/appended). */
   endpoint: string;
   agent: string | undefined;
+  /** Customer identifier default → `glassray.customer` resource attribute. */
   customer: string | undefined;
+  /** The customer's display fields default → `glassray.customer.name` / `.email` / `.domain` resource attributes. */
+  customerProfile: CustomerProfile | undefined;
   /** Release / build version, emitted as `service.version`. */
   version: string | undefined;
   /** Resource-level custom attribute defaults (per-process), emitted verbatim. */
@@ -173,13 +182,15 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       sendingEnabled = false;
     }
 
+    const customer = normalizeCustomer(options.customer, warn, "config.customer");
     return {
       enabled,
       sendingEnabled,
       apiKey,
       endpoint,
       agent: options.agent,
-      customer: options.customer,
+      customer: customer.id,
+      customerProfile: customer.profile,
       version: options.version,
       attributes: options.attributes,
       redact: options.redact,
@@ -199,6 +210,7 @@ export const resolveConfig = (options: GlassrayOptions, warn: Warner): ResolvedC
       endpoint: resolveEndpoint(DEFAULT_ENDPOINT_BASE),
       agent: undefined,
       customer: undefined,
+      customerProfile: undefined,
       version: undefined,
       attributes: undefined,
       redact: undefined,
