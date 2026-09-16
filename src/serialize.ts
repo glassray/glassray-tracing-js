@@ -17,7 +17,7 @@ import type { Warner } from "./warn.js";
 export const SCOPE_NAME = "@glassray/tracing";
 
 /** SDK version stamped on the instrumentation scope — pinned to package.json by a test. */
-export const SDK_VERSION = "0.1.7";
+export const SDK_VERSION = "0.1.8";
 
 /** Per-content-attribute cap: 32 KiB, truncate-don't-drop. */
 export const MAX_CONTENT_BYTES = 32 * 1024;

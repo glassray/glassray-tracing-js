@@ -36,7 +36,7 @@ exports[`golden OTLP JSON > serializes one whole trace exactly as the ingest con
         {
           "scope": {
             "name": "@glassray/tracing",
-            "version": "0.1.7",
+            "version": "0.1.8",
           },
           "spans": [
             {
