@@ -85,6 +85,21 @@ export const TRACE_ATTR = {
   DEPLOYMENT_ENVIRONMENT_NAME: "deployment.environment.name",
 } as const;
 
+/**
+ * The customer's display fields, emitted beside `glassray.customer` when
+ * `customer` is given as an object (`{ id, name, email, domain }`) — one
+ * object, spelled the way OTel spells `user.id` / `user.name` / `user.email`.
+ * Ingest uses them to name the identifier in Glassray's customer directory
+ * (`TRACE_CUSTOMER_PROFILE_ATTRS` on the platform side) and never filters on
+ * them. Kept beside `TRACE_ATTR` rather than inside it so the platform's pin
+ * test on `TRACE_ATTR` is unaffected by the release order.
+ */
+export const CUSTOMER_PROFILE_ATTR = {
+  GLASSRAY_CUSTOMER_NAME: "glassray.customer.name",
+  GLASSRAY_CUSTOMER_EMAIL: "glassray.customer.email",
+  GLASSRAY_CUSTOMER_DOMAIN: "glassray.customer.domain",
+} as const;
+
 /** `gen_ai.operation.name` values the SDK emits, per span kind. */
 export const TRACE_OPERATION = {
   INVOKE_AGENT: "invoke_agent",

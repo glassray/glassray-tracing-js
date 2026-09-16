@@ -106,7 +106,7 @@ throws — the SDK warns and disables itself (fail-open extends to misconfigurat
 | `redact`       | —                       | —                         | `(key, value) => value` hook over content attributes. Fail-closed: if it throws, the value is withheld.                                               |
 | `agent`        | —                       | —                         | Default metadata on every trace (see below).                                                                                                          |
 | `environment`  | —                       | —                         | **Deprecated, ignored since 0.1.3.** Still accepted so existing code compiles, but setting it warns once and has no effect — the ingest key selects the project. |
-| `customer`     | —                       | —                         | Default metadata; usually set per trace instead.                                                                                                      |
+| `customer`     | —                       | —                         | Default metadata; usually set per trace instead. A string id, or `{ id, name?, email?, domain? }` to name the customer too (see below).               |
 | `version`      | —                       | —                         | Release / build version of your service (`service.version`) — compare cost and behaviour across releases.                                             |
 | `attributes`   | —                       | —                         | Custom attributes (per-process defaults) attached to every trace, e.g. `{ environment: "production", region: "eu" }`. Filterable in Glassray. Reserved (`glassray.*` / `gen_ai.*`) keys are dropped. See below. |
 | `onWarn`       | —                       | console                   | Receives the SDK's rate-limited warnings instead of the console.                                                                                      |
@@ -119,6 +119,25 @@ it lets a workspace cap trace-of-a-trace recursion; ordinary agents leave it uns
 `glassray.startTrace(name, meta, root)` additionally takes root-span options — pass
 `{ kind: "llm", model, provider }` when the whole trace is a single model call. It lands in Glassray as filterable trace tags. (`environment` is still accepted
 here for compile compatibility but is ignored since 0.1.3 — the ingest key selects the project.)
+
+### Naming customers
+
+`customer` is an identifier, and the stable choice is often an opaque one like
+`cus_8fa21`. Pass it as an object and Glassray shows the company instead, with its logo:
+
+```ts
+await glassray.trace(
+  "handle-ticket",
+  { customer: { id: "cus_8fa21", name: "Acme Corp", email: "ops@acme.com" } },
+  async (t) => { ... },
+);
+```
+
+`id` is what Glassray filters and groups on (`glassray.customer`); `name`, `email` and
+`domain` ride beside it (`glassray.customer.name` / `.email` / `.domain`) and name the
+identifier in Glassray's customer directory. The email is only used to work out the
+company domain for the logo and is not stored; pass `domain` when you have that instead.
+A name set from a trace never overwrites one typed in Glassray's Settings.
 
 ### Custom attributes
 

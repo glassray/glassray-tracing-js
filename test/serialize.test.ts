@@ -348,6 +348,30 @@ describe("custom attributes (APP-14941)", () => {
     expect(warnings.some((w) => w.includes("gen_ai.request.model"))).toBe(true);
   });
 
+  it("emits the customer's display fields beside the identifier, at the level the identifier rides", () => {
+    const body = serializeTrace(
+      trace([span({ isRoot: true, kind: "agent" })], {
+        customer: "cus_1",
+        customerProfile: { name: "Acme Corp", email: "ops@acme.com", domain: undefined },
+      }),
+      cfg({
+        customer: "default-co",
+        customerProfile: { name: undefined, email: undefined, domain: "default.co" },
+      }),
+      noWarn,
+    );
+    const root = rootSpanAttrs(body);
+    expect(root["glassray.customer"]).toBe("cus_1");
+    expect(root["glassray.customer.name"]).toBe("Acme Corp");
+    expect(root["glassray.customer.email"]).toBe("ops@acme.com");
+    // An absent field is skipped, not emitted empty.
+    expect(root["glassray.customer.domain"]).toBeUndefined();
+    const resource = resourceAttrs(body);
+    expect(resource["glassray.customer"]).toBe("default-co");
+    expect(resource["glassray.customer.domain"]).toBe("default.co");
+    expect(resource["glassray.customer.name"]).toBeUndefined();
+  });
+
   it("skips non-scalar values (objects / arrays / null)", () => {
     const body = serializeTrace(
       trace([span({ isRoot: true, kind: "agent" })], {

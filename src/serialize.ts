@@ -6,8 +6,9 @@
  * and tokens always survive).
  */
 
-import { TRACE_ATTR, TRACE_OPERATION } from "./attributes.js";
+import { CUSTOMER_PROFILE_ATTR, TRACE_ATTR, TRACE_OPERATION } from "./attributes.js";
 import { extractRequestParams, toInputMessages, toOutputMessages } from "./capture.js";
+import type { CustomerProfile } from "./customer.js";
 import { applyRedact, scrubValue, HIDDEN_PLACEHOLDER } from "./scrub.js";
 import type { SettledTrace, SpanRecord } from "./trace.js";
 import type { Warner } from "./warn.js";
@@ -34,6 +35,8 @@ const MAX_DEPTH = 8;
 export type SerializeConfig = {
   agent: string | undefined;
   customer: string | undefined;
+  /** The customer default's display fields → `glassray.customer.name` / `.email` / `.domain` resource attributes. */
+  customerProfile?: CustomerProfile | undefined;
   /** Release / build version → `service.version` resource attribute. */
   version: string | undefined;
   /** Resource-level custom attribute defaults (per-process), emitted verbatim (APP-14941). */
@@ -71,6 +74,21 @@ const MAX_ATTRIBUTE_VALUE_CHARS = 256;
 /** True when a custom-attribute key collides with a reserved namespace. */
 const isReservedAttributeKey = (key: string): boolean =>
   RESERVED_ATTRIBUTE_PREFIXES.some((p) => key.startsWith(p));
+
+/**
+ * Emit the customer's display fields beside the identifier, at whichever level
+ * (root span or resource) the identifier itself rides. Absent fields are
+ * skipped, so a bare-string `customer` emits exactly what it always did.
+ */
+const putCustomerProfile = (
+  put: (key: string, v: string | undefined) => void,
+  profile: CustomerProfile | undefined,
+): void => {
+  if (!profile) return;
+  put(CUSTOMER_PROFILE_ATTR.GLASSRAY_CUSTOMER_NAME, profile.name);
+  put(CUSTOMER_PROFILE_ATTR.GLASSRAY_CUSTOMER_EMAIL, profile.email);
+  put(CUSTOMER_PROFILE_ATTR.GLASSRAY_CUSTOMER_DOMAIN, profile.domain);
+};
 
 /**
  * Emit a custom-attribute map onto `put`, verbatim (APP-14941). Skips reserved
@@ -356,6 +374,7 @@ const buildSpanAttrs = (
   // Per-trace metadata overrides ride the ROOT span (root wins over resource).
   if (span.isRoot) {
     put(TRACE_ATTR.GLASSRAY_CUSTOMER, trace.customer);
+    putCustomerProfile(put, trace.customerProfile);
     put(TRACE_ATTR.GLASSRAY_FLOW, trace.flow);
     put(TRACE_ATTR.USER_ID, trace.userId);
     put(TRACE_ATTR.GLASSRAY_DEPTH, trace.depth);
@@ -410,6 +429,7 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
   putResource(TRACE_ATTR.SERVICE_VERSION, cfg.version);
   putResource(TRACE_ATTR.GLASSRAY_AGENT, cfg.agent);
   putResource(TRACE_ATTR.GLASSRAY_CUSTOMER, cfg.customer);
+  putCustomerProfile(putResource, cfg.customerProfile);
   putResource(TRACE_ATTR.SESSION_ID, trace.sessionId);
   // Resource-level custom attribute defaults (APP-14941) — per-process, emitted
   // verbatim; a per-trace `meta.attributes` of the same key overrides on the root.

@@ -9,6 +9,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { GlassraySpanKind } from "./attributes.js";
 import {
+  normalizeCustomer,
+  type CustomerProfile,
+  type CustomerRef,
+  type NormalizedCustomer,
+} from "./customer.js";
+import {
   extractResponseMeta,
   extractUsage,
   type ResponseMeta,
@@ -27,7 +33,13 @@ import type { Warner } from "./warn.js";
 
 /** Per-trace metadata accepted by `glassray.trace` / `glassray.startTrace` (emitted as root-span attribute overrides). */
 export type TraceMeta = {
-  customer?: string;
+  /**
+   * Whose run this was. A string is the identifier (`glassray.customer`, what
+   * Glassray filters and groups on); an object adds the display name /
+   * contact email / company domain that name it in the customer directory,
+   * so the dashboard shows a company and its logo instead of an opaque id.
+   */
+  customer?: string | CustomerRef;
   sessionId?: string;
   flow?: string;
   /** End-user id for this run (emitted as `user.id`) — the per-user cost / behaviour dimension, distinct from the per-customer one. */
@@ -103,7 +115,10 @@ export type SettledTrace = {
   traceId: string;
   name: string;
   sessionId: string | undefined;
+  /** Customer identifier → `glassray.customer` on the root span. */
   customer: string | undefined;
+  /** The customer's display fields → `glassray.customer.name` / `.email` / `.domain` on the root span. */
+  customerProfile?: CustomerProfile | undefined;
   flow: string | undefined;
   userId: string | undefined;
   /** Recursion depth → `glassray.depth` on the root span (see `TraceMeta.depth`). */
@@ -165,6 +180,8 @@ export class TraceBuffer {
   readonly warn: Warner;
   /** Validated `meta.depth` (see the constructor). */
   private readonly depth: number | undefined;
+  /** `meta.customer` split into the identifier and its display fields (see `normalizeCustomer`). */
+  private readonly customer: NormalizedCustomer;
   private readonly meta: TraceMeta;
   private readonly name: string;
   private readonly onSettle: (trace: SettledTrace) => void;
@@ -196,6 +213,7 @@ export class TraceBuffer {
       this.warn("trace.depth", `invalid depth ${String(depth)} (need a non-negative integer) — omitted`);
     }
     this.depth = depth !== undefined && Number.isInteger(depth) && depth >= 0 ? depth : undefined;
+    this.customer = normalizeCustomer(args.meta.customer, this.warn, "trace.customer");
     const requested = args.meta.traceId;
     if (requested !== undefined && !VALID_TRACE_ID.test(requested)) {
       this.warn(
@@ -263,7 +281,8 @@ export class TraceBuffer {
       traceId: this.traceId,
       name: this.name,
       sessionId: this.meta.sessionId,
-      customer: this.meta.customer,
+      customer: this.customer.id,
+      customerProfile: this.customer.profile,
       flow: this.meta.flow,
       userId: this.meta.userId,
       depth: this.depth,

@@ -7,6 +7,7 @@ export * from "./attributes.js";
 
 export { Glassray, type WrapOptions } from "./client.js";
 export { type GlassrayOptions, DEFAULT_ENDPOINT_BASE } from "./config.js";
+export type { CustomerRef } from "./customer.js";
 export {
   createTraceId,
   SpanHandle,

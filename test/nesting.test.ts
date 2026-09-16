@@ -127,6 +127,33 @@ describe("context & nesting", () => {
     expect(attr("gen_ai.usage.cached_input_tokens")).toEqual({ intValue: "400" });
   });
 
+  it("a customer given as an object rides the root span as id + name / email; a string still emits the id alone", async () => {
+    const { glassray, bodies } = clientWithSink();
+    await glassray.trace(
+      "named",
+      { customer: { id: "cus_8fa21", name: "Acme Corp", email: "ops@acme.com" } },
+      async () => "ok",
+    );
+    await glassray.trace("bare", { customer: "cus_2" }, async () => "ok");
+    // An object without an id names nothing: dropped, not emitted half-formed.
+    await glassray.trace(
+      "no-id",
+      { customer: { name: "Nobody" } as unknown as { id: string } },
+      async () => "ok",
+    );
+    await glassray.flush();
+    const rootOf = (i: number) => spansOf(bodies[i]!).find((s) => !s.parentSpanId)!;
+    const attr = (s: WireSpan, key: string) => s.attributes.find((a) => a.key === key)?.value;
+    expect(attr(rootOf(0), "glassray.customer")).toEqual({ stringValue: "cus_8fa21" });
+    expect(attr(rootOf(0), "glassray.customer.name")).toEqual({ stringValue: "Acme Corp" });
+    expect(attr(rootOf(0), "glassray.customer.email")).toEqual({ stringValue: "ops@acme.com" });
+    expect(attr(rootOf(0), "glassray.customer.domain")).toBeUndefined();
+    expect(attr(rootOf(1), "glassray.customer")).toEqual({ stringValue: "cus_2" });
+    expect(attr(rootOf(1), "glassray.customer.name")).toBeUndefined();
+    expect(attr(rootOf(2), "glassray.customer")).toBeUndefined();
+    expect(attr(rootOf(2), "glassray.customer.name")).toBeUndefined();
+  });
+
   it("drops an invalid depth with a warning and warns on cache buckets without a convention", async () => {
     const bodies: string[] = [];
     const warnings: string[] = [];
