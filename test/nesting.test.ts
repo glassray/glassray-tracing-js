@@ -134,13 +134,21 @@ describe("context & nesting", () => {
       { customer: { id: "cus_8fa21", name: "Acme Corp", email: "ops@acme.com" } },
       async () => "ok",
     );
-    await glassray.trace("bare", { customer: "cus_2" }, async () => "ok");
+    // A string is a grouping key and passes through verbatim, whitespace included.
+    await glassray.trace("bare", { customer: " cus_2 " }, async () => "ok");
     // An object without an id names nothing: dropped, not emitted half-formed.
     await glassray.trace(
       "no-id",
       { customer: { name: "Nobody" } as unknown as { id: string } },
       async () => "ok",
     );
+    // A customer whose property reads throw must not take the trace down.
+    const hostile = new Proxy({} as { id: string }, {
+      get: () => {
+        throw new Error("no");
+      },
+    });
+    await glassray.trace("hostile", { customer: hostile }, async () => "ok");
     await glassray.flush();
     const rootOf = (i: number) => spansOf(bodies[i]!).find((s) => !s.parentSpanId)!;
     const attr = (s: WireSpan, key: string) => s.attributes.find((a) => a.key === key)?.value;
@@ -148,10 +156,12 @@ describe("context & nesting", () => {
     expect(attr(rootOf(0), "glassray.customer.name")).toEqual({ stringValue: "Acme Corp" });
     expect(attr(rootOf(0), "glassray.customer.email")).toEqual({ stringValue: "ops@acme.com" });
     expect(attr(rootOf(0), "glassray.customer.domain")).toBeUndefined();
-    expect(attr(rootOf(1), "glassray.customer")).toEqual({ stringValue: "cus_2" });
+    expect(attr(rootOf(1), "glassray.customer")).toEqual({ stringValue: " cus_2 " });
     expect(attr(rootOf(1), "glassray.customer.name")).toBeUndefined();
     expect(attr(rootOf(2), "glassray.customer")).toBeUndefined();
     expect(attr(rootOf(2), "glassray.customer.name")).toBeUndefined();
+    expect(bodies).toHaveLength(4);
+    expect(attr(rootOf(3), "glassray.customer")).toBeUndefined();
   });
 
   it("drops an invalid depth with a warning and warns on cache buckets without a convention", async () => {

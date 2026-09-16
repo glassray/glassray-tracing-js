@@ -429,7 +429,13 @@ export const serializeTrace = (trace: SettledTrace, cfg: SerializeConfig, warn: 
   putResource(TRACE_ATTR.SERVICE_VERSION, cfg.version);
   putResource(TRACE_ATTR.GLASSRAY_AGENT, cfg.agent);
   putResource(TRACE_ATTR.GLASSRAY_CUSTOMER, cfg.customer);
-  putCustomerProfile(putResource, cfg.customerProfile);
+  // The default's display fields belong to the DEFAULT customer. Ingest
+  // resolves root over resource per attribute, so when this trace names a
+  // different customer on its root, a resource-level `.domain` would be read
+  // as that customer's — and Acme would get the default's logo. Emit the
+  // default's profile only when the default is the customer this trace is for.
+  const traceOverridesCustomer = trace.customer !== undefined && trace.customer !== cfg.customer;
+  if (!traceOverridesCustomer) putCustomerProfile(putResource, cfg.customerProfile);
   putResource(TRACE_ATTR.SESSION_ID, trace.sessionId);
   // Resource-level custom attribute defaults (APP-14941) — per-process, emitted
   // verbatim; a per-trace `meta.attributes` of the same key overrides on the root.

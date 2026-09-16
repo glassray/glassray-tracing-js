@@ -40,36 +40,47 @@ export type NormalizedCustomer = {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 
+/** Nothing: no identifier, no profile. */
+const NONE: NormalizedCustomer = { id: undefined, profile: undefined };
+
 /**
- * Normalise a `customer` option. A string is the identifier alone. An object
- * needs a non-empty `id` — without one there is nothing to name, so the whole
- * value is dropped with a warning rather than emitting a profile that
- * attaches to no customer. Empty or non-string profile fields are dropped
- * quietly (they are optional). Never throws: a malformed value warns and
- * yields nothing, like every other config error.
+ * Normalise a `customer` option. A string is the identifier alone and passes
+ * through **verbatim** — it is a grouping key every release so far emitted
+ * untouched, so even its whitespace is preserved. An object needs a non-empty
+ * `id` — without one there is nothing to name, so the whole value is dropped
+ * with a warning rather than emitting a profile that attaches to no customer.
+ * Empty or non-string profile fields are dropped quietly (they are optional).
+ * Never throws: a malformed value, including one whose property reads throw
+ * (a Proxy, a getter), warns and yields nothing, like every other config
+ * error — a bad customer must not disable tracing.
  */
 export const normalizeCustomer = (
   value: string | CustomerRef | undefined,
   warn: Warner,
   scope: string,
 ): NormalizedCustomer => {
-  if (value === undefined) return { id: undefined, profile: undefined };
-  if (typeof value === "string") return { id: str(value), profile: undefined };
+  if (value === undefined) return NONE;
+  if (typeof value === "string") return { id: value, profile: undefined };
   if (typeof value !== "object" || value === null) {
     warn(scope, `invalid customer ${String(value)} (need a string id or { id, name?, email?, domain? }) — omitted`);
-    return { id: undefined, profile: undefined };
+    return NONE;
   }
-  const id = str(value.id);
-  if (id === undefined) {
-    warn(scope, "customer object has no `id` — omitted (name / email / domain need an identifier to attach to)");
-    return { id: undefined, profile: undefined };
+  try {
+    const id = str(value.id);
+    if (id === undefined) {
+      warn(scope, "customer object has no `id` — omitted (name / email / domain need an identifier to attach to)");
+      return NONE;
+    }
+    const profile: CustomerProfile = {
+      name: str(value.name),
+      email: str(value.email),
+      domain: str(value.domain),
+    };
+    const hasProfile =
+      profile.name !== undefined || profile.email !== undefined || profile.domain !== undefined;
+    return { id, profile: hasProfile ? profile : undefined };
+  } catch (err) {
+    warn(scope, `reading the customer object failed (${String(err)}) — omitted`);
+    return NONE;
   }
-  const profile: CustomerProfile = {
-    name: str(value.name),
-    email: str(value.email),
-    domain: str(value.domain),
-  };
-  const hasProfile =
-    profile.name !== undefined || profile.email !== undefined || profile.domain !== undefined;
-  return { id, profile: hasProfile ? profile : undefined };
 };
